@@ -1,0 +1,56 @@
+# ISTA Presensi — production stack.
+#
+#   cp .env.production.example .env      # fill in the values
+#   docker compose up -d --build
+#   docker compose exec backend node dist/cli/create-admin.js --email … --name "…" --nip …
+#
+# The client's existing web server (Nginx/Apache) handles HTTPS and proxies to 127.0.0.1:${APP_PORT}.
+# The database is the client's existing MySQL server (see DATABASE_URL in .env).
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        DB_PROVIDER: ${DB_PROVIDER:-mysql}
+    image: ista-absen-backend:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DB_PROVIDER: ${DB_PROVIDER:-mysql}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      CORS_ORIGIN: ${APP_URL:?set APP_URL in .env}
+      # Client web server + Next.js sit in front of the backend.
+      TRUST_PROXY: "2"
+    # Lets the container reach a MySQL server running on the same machine as "host.docker.internal".
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Not published: only the frontend talks to the backend, over the internal network.
+    expose:
+      - "4000"
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_URL: http://backend:4000
+    image: ista-absen-frontend:latest
+    restart: unless-stopped
+    environment:
+      API_URL: http://backend:4000
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Only reachable from this machine; the client web server proxies to it.
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    logging: *logging

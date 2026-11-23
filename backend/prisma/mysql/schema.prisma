@@ -1,0 +1,152 @@
+// GENERATED from ../schema.prisma by scripts/prisma.mjs — do not edit. Change ../schema.prisma instead.
+// ISTA Presensi & SDM — database schema.
+// Phase 2 uses User + UserPhoto. The rest is defined now so phases 3–5 only add API routes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  APPROVER
+  ADMIN
+}
+
+enum Locale {
+  id
+  en
+}
+
+enum Theme {
+  light
+  dark
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  nip          String   @unique
+  role         Role     @default(USER)
+  unit         String   @default("")
+  annualQuota  Int      @default(12)
+  active       Boolean  @default(true)
+  locale       Locale   @default(id)
+  theme        Theme    @default(light)
+  /// Set when an admin creates the account or resets the password; the user must choose a new one.
+  mustChangePassword Boolean @default(false)
+  /// Part of every session token. Bumping it (password change/reset) signs out all existing sessions.
+  sessionVersion     Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  photo            UserPhoto?
+  attendance       Attendance[]
+  leaveRequests    LeaveRequest[] @relation("LeaveRequester")
+  leaveDecisions   LeaveRequest[] @relation("LeaveApprover")
+}
+
+/// Profile picture bytes, kept apart from User so user lists never load images.
+model UserPhoto {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Bytes
+  mimeType  String
+  size      Int
+  updatedAt DateTime @updatedAt
+}
+
+model Location {
+  id        String   @id // slug, e.g. "gedung-a" — appears in QR tokens and kiosk URLs
+  name      String
+  building  String   @default("")
+  active    Boolean  @default(true)
+  /// HMAC key for this location's rotating QR tokens. Never sent to clients.
+  qrSecret     String
+  /// SHA-256 of the key a kiosk screen uses to fetch tokens; null = no kiosk paired.
+  kioskKeyHash String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clockIns  Attendance[] @relation("ClockInLocation")
+  clockOuts Attendance[] @relation("ClockOutLocation")
+}
+
+enum ScanMethod {
+  CAMERA
+  UPLOAD
+}
+
+enum AttendanceStatus {
+  CLOCKED_IN
+  COMPLETE
+  MISSING_CLOCK_OUT
+  FIXED
+  DEDUCTED
+}
+
+model Attendance {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Working day in Asia/Jakarta.
+  date          DateTime         @db.Date
+  clockIn       DateTime
+  clockOut      DateTime?
+  inLocationId  String
+  inLocation    Location         @relation("ClockInLocation", fields: [inLocationId], references: [id])
+  outLocationId String?
+  outLocation   Location?        @relation("ClockOutLocation", fields: [outLocationId], references: [id])
+  status        AttendanceStatus @default(CLOCKED_IN)
+  /// How the QR was read: phone camera or an uploaded image (reported by the app; shown to admins for review).
+  inMethod      ScanMethod       @default(CAMERA)
+  outMethod     ScanMethod?
+  fixReason     String?          @db.Text
+  fixedAt       DateTime?
+  deductedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([userId, date]) // one record per person per day
+  @@index([date])
+  @@index([status])
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  days         Int
+  reason       String      @db.Text
+  status       LeaveStatus @default(PENDING)
+  decidedById  String?
+  decidedBy    User?       @relation("LeaveApprover", fields: [decidedById], references: [id])
+  decidedAt    DateTime?
+  decisionNote String?     @db.Text
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([userId, startDate])
+  @@index([status])
+}
+
+/// Public holidays and campus days off. Not counted as working days for leave.
+model Holiday {
+  date      DateTime @id @db.Date
+  name      String
+  createdAt DateTime @default(now())
+}

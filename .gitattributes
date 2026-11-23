@@ -1,0 +1,4 @@
+# Keep LF line endings in the repo (Docker/Linux servers); Windows checkouts may still use CRLF.
+* text=auto eol=lf
+*.png binary
+*.ico binary

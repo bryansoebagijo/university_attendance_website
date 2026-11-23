@@ -1,0 +1,26 @@
+# Dependencies and build output
+node_modules/
+dist/
+.next/
+.next-*/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets and local settings — never commit these
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+backend/.pg-superuser-password
+backend/.mysql-root-password
+
+# Editor / tool folders
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.test
+.pg-superuser-password
+.env.mysql
+.env.test.mysql
+.mysql-root-password
