@@ -1,0 +1,31 @@
+# Render Blueprint for the free DEMO deployment (backend only).
+# Frontend: Vercel (root directory "frontend"). Database: Neon PostgreSQL.
+# Production for the client uses docker-compose.yml + their MySQL instead (see DEPLOY.md).
+services:
+  - type: web
+    name: ista-absen-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Build arg for the Dockerfile: generate the Prisma client for PostgreSQL (Neon).
+      - key: DB_PROVIDER
+        value: postgresql
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      # Vercel's proxy + Render's load balancer sit in front of the app.
+      - key: TRUST_PROXY
+        value: "2"
+      - key: SESSION_HOURS
+        value: "12"
+      # Secrets: entered in the Render dashboard, never committed.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
