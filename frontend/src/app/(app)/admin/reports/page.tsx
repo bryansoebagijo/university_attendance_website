@@ -17,8 +17,8 @@ export default function MonthlyReportPage() {
 
   const exportCsv = () =>
     downloadCsv(`rekap-${month}.csv`, [
-      ["NIP", "Nama", "Unit", "Hari kerja", "Hadir", "Terlambat", "Cuti", "Tanpa keterangan", "Belum absen pulang", "Diperbaiki", "Dipotong", "Via unggahan"],
-      ...rows.map((r) => [r.user.nip, r.user.name, r.user.unit, data!.workdays, r.present, r.late, r.leave, r.absent, r.missingClockOut, r.fixed, r.deducted, r.uploads]),
+      ["NIP", "Nama", "Unit", "Hari kerja", "Hadir", "Terlambat", "Cuti", "Sakit", "Tanpa keterangan", "Belum absen pulang", "Diperbaiki", "Dipotong", "Via unggahan"],
+      ...rows.map((r) => [r.user.nip, r.user.name, r.user.unit, data!.workdays, r.present, r.late, r.leave, r.sick, r.absent, r.missingClockOut, r.fixed, r.deducted, r.uploads]),
     ]);
 
   const num = (n: number, tone?: "bad" | "warn") =>
@@ -62,6 +62,7 @@ export default function MonthlyReportPage() {
                 <th>{t.reports.present}</th>
                 <th>{t.reports.late}</th>
                 <th>{t.reports.leave}</th>
+                <th>{t.reports.sick}</th>
                 <th>{t.reports.absent}</th>
                 <th>{t.reports.missing}</th>
                 <th>{t.reports.fixed}</th>
@@ -88,6 +89,7 @@ export default function MonthlyReportPage() {
                   </td>
                   <td data-label={t.reports.late}>{num(r.late, "warn")}</td>
                   <td data-label={t.reports.leave}>{r.leave}</td>
+                  <td data-label={t.reports.sick}>{r.sick}</td>
                   <td data-label={t.reports.absent}>{num(r.absent, "bad")}</td>
                   <td data-label={t.reports.missing}>{num(r.missingClockOut, "warn")}</td>
                   <td data-label={t.reports.fixed}>{r.fixed}</td>

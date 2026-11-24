@@ -1,9 +1,10 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Paperclip, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "@/lib/i18n/provider";
-import type { AttendanceStatus, LeaveStatus } from "@/lib/types";
+import { leaveAttachmentUrl } from "@/lib/api";
+import type { AttendanceStatus, LeaveRequest, LeaveStatus, LeaveType } from "@/lib/types";
 
 export function PageHeading({
   eyebrow,
@@ -193,5 +194,28 @@ export function UploadTag() {
     <span className="tag tag-warn ml-1.5 !px-1.5 !py-0.5 !text-[10px]" title={t.admin.viaUploadTitle}>
       {t.admin.viaUpload}
     </span>
+  );
+}
+
+/** Annual vs sick leave. */
+export function LeaveTypeTag({ type }: { type: LeaveType }) {
+  const { t } = useI18n();
+  return <span className={`tag ${type === "SICK" ? "tag-blue" : "tag-gray"}`}>{type === "SICK" ? t.sick.tagSick : t.sick.tagAnnual}</span>;
+}
+
+/** Opens the doctor's note (image or PDF) in a new tab. Renders nothing when there is none. */
+export function AttachmentLink({ request, compact = false }: { request: Pick<LeaveRequest, "id" | "attachment">; compact?: boolean }) {
+  const { t } = useI18n();
+  if (!request.attachment) return null;
+  return (
+    <a
+      className={compact ? "inline-flex items-center gap-1 text-[12px] font-semibold text-brand underline-offset-2 hover:underline" : "btn btn-sm"}
+      href={leaveAttachmentUrl(request.id)}
+      target="_blank"
+      rel="noopener"
+      title={request.attachment.fileName}
+    >
+      <Paperclip size={13} /> {t.sick.viewNote}
+    </a>
   );
 }

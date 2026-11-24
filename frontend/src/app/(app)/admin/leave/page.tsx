@@ -3,16 +3,17 @@
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LeaveDecisionModal } from "@/components/leave-decision";
-import { Empty, LoadError, PageHeading, Skeleton, StatusTag } from "@/components/ui";
+import { AttachmentLink, Empty, LeaveTypeTag, LoadError, PageHeading, Skeleton, StatusTag } from "@/components/ui";
 import { paths, useApi, type LeaveListResponse, type PendingLeaveResponse } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
 import { fmtDate } from "@/lib/date";
 import { useI18n } from "@/lib/i18n/provider";
-import type { LeaveStatus, PendingLeave } from "@/lib/types";
+import type { LeaveStatus, LeaveType, PendingLeave } from "@/lib/types";
 
 export default function AdminLeavePage() {
   const { t, f, locale } = useI18n();
   const [status, setStatus] = useState<LeaveStatus | "">("");
+  const [type, setType] = useState<LeaveType | "">("");
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function AdminLeavePage() {
     return () => clearTimeout(id);
   }, [q]);
   const [open, setOpen] = useState<PendingLeave | null>(null);
-  const { data, error, mutate, isLoading } = useApi<LeaveListResponse>(paths.adminLeave({ status, q: query }));
+  const { data, error, mutate, isLoading } = useApi<LeaveListResponse>(paths.adminLeave({ status, type, q: query }));
   // The decision dialog needs the balance + overlaps that only the pending endpoint computes.
   const pending = useApi<PendingLeaveResponse>(paths.pendingLeave);
   const rows = data?.requests ?? [];
@@ -37,8 +38,20 @@ export default function AdminLeavePage() {
             disabled={!rows.length}
             onClick={() =>
               downloadCsv("cuti.csv", [
-                ["NIP", "Nama", "Mulai", "Selesai", "Hari", "Alasan", "Status", "Diputuskan oleh", "Catatan"],
-                ...rows.map((l) => [l.user.nip, l.user.name, l.start, l.end, l.days, l.reason, l.status, l.decidedBy?.name ?? "", l.decisionNote ?? ""]),
+                ["NIP", "Nama", "Jenis", "Mulai", "Selesai", "Hari", "Alasan", "Surat dokter", "Status", "Diputuskan oleh", "Catatan"],
+                ...rows.map((l) => [
+                  l.user.nip,
+                  l.user.name,
+                  l.type === "SICK" ? "Sakit" : "Tahunan",
+                  l.start,
+                  l.end,
+                  l.days,
+                  l.reason,
+                  l.attachment ? "Ya" : "",
+                  l.status,
+                  l.decidedBy?.name ?? "",
+                  l.decisionNote ?? "",
+                ]),
               ])
             }
           >
@@ -56,6 +69,11 @@ export default function AdminLeavePage() {
               {t.status[s]}
             </option>
           ))}
+        </select>
+        <select className="input input-inline" value={type} onChange={(e) => setType(e.target.value as LeaveType | "")} aria-label={t.sick.type}>
+          <option value="">{t.sick.filterAll}</option>
+          <option value="ANNUAL">{t.sick.annual}</option>
+          <option value="SICK">{t.sick.sick}</option>
         </select>
       </div>
 
@@ -82,6 +100,10 @@ export default function AdminLeavePage() {
                   <td data-label={t.leave.period}>
                     {fmtDate(l.start, locale)}
                     {l.end !== l.start && ` – ${fmtDate(l.end, locale)}`}
+                    <small className="flex flex-wrap items-center gap-2">
+                      <LeaveTypeTag type={l.type} />
+                      <AttachmentLink request={l} compact />
+                    </small>
                   </td>
                   <td data-label={t.common.days}>{l.days}</td>
                   <td data-label={t.common.reason} className="max-w-[300px]">

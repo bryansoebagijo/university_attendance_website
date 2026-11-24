@@ -1,10 +1,12 @@
 import { Router } from "express";
+import multer from "multer";
+import sharp from "sharp";
 import { z } from "zod";
 import { requireAuth, requireRole } from "../auth/middleware.js";
 import { prisma } from "../db.js";
-import { route } from "../lib/http.js";
+import { HttpError, route } from "../lib/http.js";
 import { jakartaDate } from "../lib/time.js";
-import { cancelRequest, createRequest, decide, getBalance, leaveInclude, overlapsFor, toLeaveDto } from "../services/leave.js";
+import { cancelRequest, createRequest, decide, getBalance, leaveInclude, overlapsFor, toLeaveDto, type NewAttachment } from "../services/leave.js";
 
 export const leaveRouter = Router();
 leaveRouter.use(requireAuth);
@@ -26,13 +28,66 @@ leaveRouter.get(
   }),
 );
 
-const createSchema = z.object({ start: isoDate, end: isoDate, reason: z.string().trim().min(5).max(500) });
+const createSchema = z.object({
+  type: z.enum(["ANNUAL", "SICK"]).default("ANNUAL"),
+  start: isoDate,
+  end: isoDate,
+  reason: z.string().trim().min(5).max(500),
+});
 
+// ---- Doctor's note upload ------------------------------------------------------
+
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: ATTACHMENT_MAX_BYTES, files: 1, fields: 10 } });
+
+/** Validates the upload: images are re-encoded (shrinks phone photos, strips EXIF, rejects fakes); PDFs must really be PDFs. */
+async function readAttachment(file: Express.Multer.File | undefined): Promise<NewAttachment | undefined> {
+  if (!file) return undefined;
+  const base = (file.originalname || "lampiran").replace(/[^\w.\- ]+/g, "_").slice(0, 80).replace(/\.[^.]*$/, "") || "lampiran";
+  if (file.mimetype === "application/pdf") {
+    if (file.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") throw new HttpError(415, "UNSUPPORTED_ATTACHMENT");
+    return { data: file.buffer, mimeType: "application/pdf", fileName: `${base}.pdf` };
+  }
+  if (!IMAGE_TYPES.has(file.mimetype)) throw new HttpError(415, "UNSUPPORTED_ATTACHMENT");
+  try {
+    const data = await sharp(file.buffer, { limitInputPixels: 60_000_000 })
+      .rotate()
+      .resize(2000, 2000, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+    return { data, mimeType: "image/jpeg", fileName: `${base}.jpg` };
+  } catch {
+    throw new HttpError(415, "UNSUPPORTED_ATTACHMENT");
+  }
+}
+
+/** JSON (annual leave) or multipart/form-data with an optional "attachment" file (sick leave + doctor's note). */
 leaveRouter.post(
   "/",
+  upload.single("attachment"),
   route(async (req, res) => {
-    const { start, end, reason } = createSchema.parse(req.body);
-    res.status(201).json({ request: await createRequest(req.user!.id, start, end, reason) });
+    const { type, start, end, reason } = createSchema.parse(req.body);
+    const attachment = await readAttachment(req.file);
+    if (attachment && type !== "SICK") throw new HttpError(400, "ATTACHMENT_NOT_ALLOWED");
+    res.status(201).json({ request: await createRequest(req.user!.id, { type, start, end, reason, attachment }) });
+  }),
+);
+
+/** The doctor's note: visible to the requester, approvers and admins only. */
+leaveRouter.get(
+  "/:id/attachment",
+  route(async (req, res) => {
+    const me = req.user!;
+    const row = await prisma.leaveRequest.findUnique({ where: { id: req.params.id }, select: { userId: true, attachment: true } });
+    const allowed = row && (row.userId === me.id || me.role === "APPROVER" || me.role === "ADMIN");
+    if (!allowed || !row.attachment) throw new HttpError(404, "NOT_FOUND");
+    const a = row.attachment;
+    res.setHeader("Content-Type", a.mimeType);
+    res.setHeader("Content-Length", String(a.size));
+    res.setHeader("Content-Disposition", `${req.query.download ? "attachment" : "inline"}; filename="${a.fileName}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.end(Buffer.from(a.data));
   }),
 );
 

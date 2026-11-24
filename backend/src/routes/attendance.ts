@@ -6,7 +6,7 @@ import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { route } from "../lib/http.js";
 import { addMonths, dateOnly, jakartaDate, monthRange } from "../lib/time.js";
-import { attendanceInclude, fixClockOut, scan, toAttendanceDto } from "../services/attendance.js";
+import { attendanceInclude, fixClockOut, scan, toAttendanceDto, sickCovered } from "../services/attendance.js";
 
 export const attendanceRouter = Router();
 attendanceRouter.use(requireAuth);
@@ -92,7 +92,12 @@ attendanceRouter.get(
         include: attendanceInclude,
       }),
     ]);
-    res.json({ missing: missing.map(toAttendanceDto), past: past.map(toAttendanceDto) });
+    const excused = await sickCovered(missing);
+    res.json({
+      // sickExcused: the day has approved sick leave, so it will not be deducted (fixing it is still allowed).
+      missing: missing.map((a) => ({ ...toAttendanceDto(a), sickExcused: excused.has(a.id) })),
+      past: past.map(toAttendanceDto),
+    });
   }),
 );
 

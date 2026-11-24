@@ -3,37 +3,44 @@
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import { LeaveDecisionModal } from "@/components/leave-decision";
-import { Avatar, Empty, LoadError, PageHeading, Skeleton, StatusTag } from "@/components/ui";
+import { AttachmentLink, Avatar, Empty, LeaveTypeTag, LoadError, PageHeading, Skeleton, StatusTag } from "@/components/ui";
 import { paths, useApi, type LeaveListResponse, type PendingLeaveResponse } from "@/lib/api";
 import { fmtDate } from "@/lib/date";
 import { useI18n } from "@/lib/i18n/provider";
 import { useSession } from "@/lib/me";
-import type { PendingLeave } from "@/lib/types";
+import type { LeaveType, PendingLeave } from "@/lib/types";
 
 export default function ApprovalsPage() {
   const { t, f, locale } = useI18n();
   const { userId } = useSession();
   const [tab, setTab] = useState<"pending" | "decided">("pending");
   const [open, setOpen] = useState<PendingLeave | null>(null);
+  const [type, setType] = useState<LeaveType | "">("");
   const p = useApi<PendingLeaveResponse>(paths.pendingLeave);
   const d = useApi<LeaveListResponse>(paths.decidedLeave);
   if (!p.data || !d.data)
     return p.error || d.error ? <LoadError onRetry={() => void Promise.all([p.mutate(), d.mutate()])} /> : <Skeleton />;
 
-  const pending = p.data.requests; // sorted by start date on the server
-  const decided = d.data.requests; // newest decision first
+  const ofType = <R extends { type: LeaveType }>(rows: R[]) => (type ? rows.filter((r) => r.type === type) : rows);
+  const pending = ofType(p.data.requests); // sorted by start date on the server
+  const decided = ofType(d.data.requests); // newest decision first
 
   return (
     <>
       <PageHeading eyebrow={t.approvals.eyebrow} title={t.approvals.title} sub={t.approvals.sub} />
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         {(["pending", "decided"] as const).map((k) => (
           <button key={k} className={`btn btn-sm ${tab === k ? "btn-active" : ""}`} onClick={() => setTab(k)}>
             {k === "pending" ? t.approvals.pendingTab : t.approvals.decidedTab}
             <span className="tag tag-gray !px-1.5 !py-0.5">{k === "pending" ? pending.length : decided.length}</span>
           </button>
         ))}
+        <select className="input !mt-0 !w-auto !py-[7px] text-[13px] sm:ml-auto" value={type} onChange={(e) => setType(e.target.value as LeaveType | "")} aria-label={t.sick.type}>
+          <option value="">{t.sick.filterAll}</option>
+          <option value="ANNUAL">{t.sick.annual}</option>
+          <option value="SICK">{t.sick.sick}</option>
+        </select>
       </div>
 
       {tab === "pending" ? (
@@ -51,6 +58,7 @@ export default function ApprovalsPage() {
                       <div className="truncate font-semibold text-ink-2">{u.name}</div>
                       <div className="tiny">{u.unit}</div>
                     </div>
+                    <LeaveTypeTag type={r.type} />
                     {r.userId === userId ? <span className="tag tag-gray">{t.approvals.own}</span> : <StatusTag status={r.status} />}
                   </div>
                   <div className="mt-4 text-[14px] font-semibold text-ink">
@@ -62,9 +70,16 @@ export default function ApprovalsPage() {
                   </div>
                   <p className="mt-1 line-clamp-2 text-[13px] text-muted">{r.reason}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="tag">
-                      {t.leave.remaining}: {bal.remaining} {t.common.days}
-                    </span>
+                    {r.type === "SICK" ? (
+                      <span className="tag tag-blue">
+                        {t.sick.sickThisYear}: {bal.sickDays} {t.common.days}
+                      </span>
+                    ) : (
+                      <span className="tag">
+                        {t.leave.remaining}: {bal.remaining} {t.common.days}
+                      </span>
+                    )}
+                    {r.type === "SICK" && <AttachmentLink request={r} compact />}
                     {ov > 0 && (
                       <span className="tag tag-warn whitespace-normal">
                         <AlertTriangle size={11} /> {f(t.approvals.overlap, { count: ov })}
@@ -108,6 +123,10 @@ export default function ApprovalsPage() {
                     <td data-label={t.leave.period}>
                       {fmtDate(r.start, locale)}
                       {r.end !== r.start && ` – ${fmtDate(r.end, locale)}`}
+                      <small className="flex flex-wrap items-center gap-2">
+                        <LeaveTypeTag type={r.type} />
+                        <AttachmentLink request={r} compact />
+                      </small>
                     </td>
                     <td data-label={t.common.days}>{r.days}</td>
                     <td data-label={t.common.status}>

@@ -5,6 +5,7 @@
  */
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import sharp from "sharp";
 import { PrismaClient, type AttendanceStatus, type Role } from "@prisma/client";
 import { addDays, dateOnly, isWeekend, jakartaDate, jakartaInstant } from "../src/lib/time.js";
 import { workdaysBetween } from "../src/services/leave.js";
@@ -157,35 +158,64 @@ async function seedLeave() {
   if ((await prisma.leaveRequest.count()) > 0) return 0;
   const today = jakartaDate();
   const d = (n: number) => addDays(today, n);
-  const items: { userId: string; start: string; end: string; reason: string; status: "PENDING" | "APPROVED" | "REJECTED"; by?: string; note?: string }[] = [
+  type Item = { userId: string; type?: "ANNUAL" | "SICK"; start: string; end: string; reason: string; status: "PENDING" | "APPROVED" | "REJECTED"; by?: string; note?: string; doctorNote?: boolean };
+  const items: Item[] = [
     { userId: "u1", start: d(-40), end: d(-39), reason: "Menghadiri pernikahan saudara di Bandung.", status: "APPROVED", by: "a1" },
     { userId: "u1", start: d(14), end: d(16), reason: "Mendampingi orang tua kontrol kesehatan.", status: "PENDING" },
     { userId: "u1", start: d(-25), end: d(-25), reason: "Urusan keluarga.", status: "REJECTED", by: "a2", note: "Bertepatan dengan ujian tengah semester. Mohon ajukan tanggal lain." },
     { userId: "u2", start: d(7), end: d(11), reason: "Liburan keluarga akhir tahun.", status: "PENDING" },
     { userId: "u3", start: d(15), end: d(15), reason: "Mengurus dokumen kependudukan.", status: "PENDING" },
-    { userId: "u4", start: d(-1), end: d(2), reason: "Pemulihan pascaoperasi ringan.", status: "APPROVED", by: "a2" },
+    { userId: "u4", type: "SICK", start: d(-1), end: d(2), reason: "Pemulihan pascaoperasi ringan.", status: "APPROVED", by: "a2", doctorNote: true },
+    { userId: "u2", type: "SICK", start: d(-3), end: d(-3), reason: "Demam dan flu, istirahat di rumah.", status: "APPROVED", by: "a1" },
+    { userId: "u3", type: "SICK", start: d(-2), end: d(-1), reason: "Gangguan pencernaan, dirawat jalan.", status: "PENDING", doctorNote: true },
     { userId: "u5", start: d(-15), end: d(-14), reason: "Acara wisuda adik.", status: "APPROVED", by: "a1" },
   ];
   // Keep only items with working days that stay inside one year (the API's own rules).
   const valid = items
     .map((i) => ({ ...i, days: workdaysBetween(i.start, i.end) }))
     .filter((i) => i.days > 0 && i.start.slice(0, 4) === i.end.slice(0, 4));
-  await prisma.leaveRequest.createMany({
-    data: valid.map((i) => ({
-      userId: i.userId,
-      startDate: dateOnly(i.start),
-      endDate: dateOnly(i.end),
-      days: i.days,
-      reason: i.reason,
-      status: i.status,
-      // Submitted 10 days before the start, but never in the future; decided 2 days later (also not in the future).
-      createdAt: jakartaInstant(minDate(addDays(i.start, -10), addDays(today, -3)), "10:15"),
-      decidedById: i.by ?? null,
-      decidedAt: i.by ? jakartaInstant(minDate(addDays(i.start, -8), addDays(today, -1)), "13:30") : null,
-      decisionNote: i.note ?? null,
-    })),
-  });
+  const note = await sampleDoctorNote();
+  for (const i of valid) {
+    const sick = i.type === "SICK";
+    // Annual: submitted ~10 days ahead, decided 2 days later. Sick: reported on the first sick day, decided the next day.
+    // Never in the future either way.
+    const created = sick ? minDate(i.start, today) : minDate(addDays(i.start, -10), addDays(today, -3));
+    const decided = sick ? minDate(addDays(i.start, 1), today) : minDate(addDays(i.start, -8), addDays(today, -1));
+    await prisma.leaveRequest.create({
+      data: {
+        userId: i.userId,
+        type: i.type ?? "ANNUAL",
+        startDate: dateOnly(i.start),
+        endDate: dateOnly(i.end),
+        days: i.days,
+        reason: i.reason,
+        status: i.status,
+        createdAt: jakartaInstant(created, "07:30"),
+        decidedById: i.by ?? null,
+        decidedAt: i.by ? jakartaInstant(decided, "09:00") : null,
+        decisionNote: i.note ?? null,
+        ...(i.doctorNote && {
+          attachment: { create: { data: note, mimeType: "image/jpeg", fileName: "surat-dokter-contoh.jpg", size: note.length } },
+        }),
+      },
+    });
+  }
   return valid.length;
+}
+
+/** A clearly fake doctor's note image for the sample sick-leave requests. */
+async function sampleDoctorNote(): Promise<Buffer> {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200">
+    <rect width="100%" height="100%" fill="#fbfaf4"/>
+    <rect x="40" y="40" width="820" height="1120" fill="none" stroke="#2f7b46" stroke-width="4"/>
+    <text x="450" y="160" font-family="Arial, sans-serif" font-size="44" font-weight="bold" fill="#1e603a" text-anchor="middle">SURAT KETERANGAN SAKIT</text>
+    <text x="450" y="220" font-family="Arial, sans-serif" font-size="28" fill="#78847c" text-anchor="middle">Contoh untuk demo — bukan dokumen asli</text>
+    <line x1="100" y1="270" x2="800" y2="270" stroke="#d8b757" stroke-width="3"/>
+    <text x="100" y="360" font-family="Arial, sans-serif" font-size="30" fill="#263c31">Menerangkan bahwa pasien perlu istirahat</text>
+    <text x="100" y="410" font-family="Arial, sans-serif" font-size="30" fill="#263c31">sesuai tanggal pada pengajuan cuti sakit.</text>
+    <text x="560" y="900" font-family="Arial, sans-serif" font-size="28" fill="#263c31">dr. Contoh, Sp.PD</text>
+  </svg>`;
+  return sharp(Buffer.from(svg)).jpeg({ quality: 80 }).toBuffer();
 }
 
 main()

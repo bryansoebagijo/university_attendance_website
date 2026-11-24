@@ -64,10 +64,18 @@ export interface AdminAttendance extends Attendance {
 }
 
 export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED";
+/** ANNUAL uses the yearly quota; SICK needs approval too but never touches the quota. */
+export type LeaveType = "ANNUAL" | "SICK";
+
+/** Rules shared with the backend (services/leave.ts). */
+export const SICK_BACKDATE_DAYS = 7;
+export const SICK_NOTE_MIN_DAYS = 2;
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 
 /** Leave request as returned by the backend. */
 export interface LeaveRequest {
   id: string;
+  type: LeaveType;
   userId: string;
   start: string; // YYYY-MM-DD
   end: string; // YYYY-MM-DD
@@ -78,6 +86,8 @@ export interface LeaveRequest {
   decidedAt: string | null;
   decisionNote: string | null;
   decidedBy: { id: string; name: string } | null;
+  /** Doctor's note (sick leave). The file itself: leaveAttachmentUrl(id). */
+  attachment: { fileName: string; mimeType: string; size: number } | null;
   user: { id: string; name: string; nip: string; unit: string; photoUrl: string | null };
 }
 
@@ -94,6 +104,8 @@ export interface LeaveBalance {
   remaining: number;
   /** remaining − pending: what can still be requested. */
   available: number;
+  /** Approved sick-leave days this year (tracked only). */
+  sickDays: number;
 }
 
 /** Pending request as shown to approvers. */
@@ -134,7 +146,10 @@ export interface MonthlyReportRow {
   user: { id: string; name: string; nip: string; unit: string };
   present: number;
   late: number;
+  /** Approved annual-leave days. */
   leave: number;
+  /** Approved sick-leave days. */
+  sick: number;
   absent: number;
   missingClockOut: number;
   fixed: number;

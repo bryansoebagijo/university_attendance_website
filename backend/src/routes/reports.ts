@@ -41,7 +41,7 @@ reportsRouter.get(
         : Promise.resolve([]),
       prisma.leaveRequest.findMany({
         where: { status: "APPROVED", startDate: { lte: dateOnly(to) }, endDate: { gte: dateOnly(from) } },
-        select: { userId: true, startDate: true, endDate: true },
+        select: { userId: true, type: true, startDate: true, endDate: true },
       }),
     ]);
 
@@ -54,15 +54,19 @@ reportsRouter.get(
       const joined = [jakartaDate(createdAt), first ? fromDateOnly(first) : null].filter(Boolean).sort()[0] as string;
       const presentDays = new Set(mine.map((a) => fromDateOnly(a.date)));
       const leaveDays = new Set<string>();
+      const sickDays = new Set<string>();
       for (const l of leave.filter((x) => x.userId === u.id)) {
-        for (let d = fromDateOnly(l.startDate); d <= fromDateOnly(l.endDate); d = addDays(d, 1)) if (workdaySet.has(d)) leaveDays.add(d);
+        const target = l.type === "SICK" ? sickDays : leaveDays;
+        for (let d = fromDateOnly(l.startDate); d <= fromDateOnly(l.endDate); d = addDays(d, 1)) if (workdaySet.has(d)) target.add(d);
       }
-      const absent = workdays.filter((d) => d >= joined && d < today && !presentDays.has(d) && !leaveDays.has(d)).length;
+      // Approved leave of either type excuses the day; a rejected sick request leaves it as an absence.
+      const absent = workdays.filter((d) => d >= joined && d < today && !presentDays.has(d) && !leaveDays.has(d) && !sickDays.has(d)).length;
       return {
         user: u,
         present: presentDays.size,
         late: mine.filter((a) => jakartaTime(a.clockIn) > WORK_START).length,
         leave: leaveDays.size,
+        sick: sickDays.size,
         absent,
         missingClockOut: mine.filter((a) => a.status === "MISSING_CLOCK_OUT").length,
         fixed: mine.filter((a) => a.status === "FIXED").length,

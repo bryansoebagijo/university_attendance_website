@@ -83,7 +83,7 @@ export default function FixPage() {
   );
 }
 
-function FixCard({ record }: { record: Attendance }) {
+function FixCard({ record }: { record: Attendance & { sickExcused?: boolean } }) {
   const { t, f, locale } = useI18n();
   const { notify } = useStore();
   const { mutate } = useSWRConfig();
@@ -132,9 +132,13 @@ function FixCard({ record }: { record: Attendance }) {
             {t.common.clockIn} {inTime} · {t.common.clockOut} —
           </p>
         </div>
-        <span className={`tag ${left <= 14 ? "tag-bad" : "tag-warn"}`}>
-          <CalendarClock size={12} /> {left >= 0 ? f(t.fix.daysLeft, { count: left }) : t.fix.overdue}
-        </span>
+        {record.sickExcused ? (
+          <span className="tag tag-blue whitespace-normal">{t.sick.excused}</span>
+        ) : (
+          <span className={`tag ${left <= 14 ? "tag-bad" : "tag-warn"}`}>
+            <CalendarClock size={12} /> {left >= 0 ? f(t.fix.daysLeft, { count: left }) : t.fix.overdue}
+          </span>
+        )}
       </div>
       <p className="tiny mb-3">
         {t.fix.deadline}: <b className="text-ink-2">{fmtDate(deadline, locale)}</b>

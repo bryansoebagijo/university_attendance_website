@@ -63,11 +63,12 @@ adminRouter.get(
   "/overview",
   route(async (_req, res) => {
     const today = dateOnly(jakartaDate());
-    const [activeStaff, todayRows, missingCount, onLeaveToday, pendingLeave] = await Promise.all([
+    const [activeStaff, todayRows, missingCount, onLeaveToday, sickToday, pendingLeave] = await Promise.all([
       prisma.user.count({ where: { active: true } }),
       prisma.attendance.findMany({ where: { date: today }, select: { clockIn: true, clockOut: true } }),
       prisma.attendance.count({ where: { status: "MISSING_CLOCK_OUT" } }),
       prisma.leaveRequest.count({ where: { status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } } }),
+      prisma.leaveRequest.count({ where: { type: "SICK", status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } } }),
       prisma.leaveRequest.count({ where: { status: "PENDING" } }),
     ]);
     res.json({
@@ -77,7 +78,9 @@ adminRouter.get(
       doneToday: todayRows.filter((r) => r.clockOut).length,
       workingNow: todayRows.filter((r) => !r.clockOut).length,
       missingCount,
+      /** All approved leave today (annual + sick); sickToday is the sick part of it. */
       onLeaveToday,
+      sickToday,
       pendingLeave,
     });
   }),
@@ -87,16 +90,18 @@ adminRouter.get(
 
 const leaveListSchema = z.object({
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  type: z.enum(["ANNUAL", "SICK"]).optional(),
   q: z.string().trim().max(100).optional(),
 });
 
 adminRouter.get(
   "/leave",
   route(async (req, res) => {
-    const { status, q } = leaveListSchema.parse(req.query);
+    const { status, type, q } = leaveListSchema.parse(req.query);
     const rows = await prisma.leaveRequest.findMany({
       where: {
         ...(status ? { status } : {}),
+        ...(type ? { type } : {}),
         ...(q ? { user: { OR: [{ name: containsIgnoreCase(q) }, { nip: { contains: q } }] } } : {}),
       },
       orderBy: { startDate: "desc" },

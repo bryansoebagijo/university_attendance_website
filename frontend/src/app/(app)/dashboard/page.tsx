@@ -245,7 +245,7 @@ function AdminDashboard() {
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label={t.dashboard.statTotal} value={ov.activeStaff} unit={t.dashboard.people} foot={t.dashboard.statTotalFoot} icon={<Users size={15} />} tone="plain" />
         <StatCard label={t.dashboard.statPresent} value={ov.presentToday} unit={t.dashboard.people} foot={f(t.dashboard.statPresentFoot, { late })} icon={<UserCheck size={15} />} tone="green" />
-        <StatCard label={t.dashboard.statLeave} value={onLeaveToday} unit={t.dashboard.people} foot={t.dashboard.statLeaveFoot} icon={<CalendarDays size={15} />} tone="gold" />
+        <StatCard label={t.dashboard.statLeave} value={onLeaveToday} unit={t.dashboard.people} foot={ov.sickToday ? f(t.sick.onLeaveSick, { count: ov.sickToday }) : t.dashboard.statLeaveFoot} icon={<CalendarDays size={15} />} tone="gold" />
         <StatCard label={t.dashboard.statFollowUp} value={pendingLeave + ov.missingCount} foot={t.dashboard.statFollowUpFoot} icon={<Clock size={15} />} tone="red" />
       </div>
 

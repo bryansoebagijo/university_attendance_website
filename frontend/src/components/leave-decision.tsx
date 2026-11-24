@@ -9,7 +9,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { useSession } from "@/lib/me";
 import { useStore } from "@/lib/store";
 import type { PendingLeave } from "@/lib/types";
-import { Avatar, Modal } from "./ui";
+import { AttachmentLink, Avatar, LeaveTypeTag, Modal } from "./ui";
 
 /** Shared approve/reject dialog (approvers and admins). Balance and overlaps come from GET /api/leave/pending. */
 export function LeaveDecisionModal({ request, onClose }: { request: PendingLeave; onClose: () => void }) {
@@ -22,7 +22,9 @@ export function LeaveDecisionModal({ request, onClose }: { request: PendingLeave
   const [busy, setBusy] = useState(false);
   const user = request.user;
   const bal = request.balance;
-  const after = bal.remaining - request.days;
+  const sick = request.type === "SICK";
+  // Sick leave never uses the annual quota, so the balance can't block it.
+  const after = sick ? bal.remaining : bal.remaining - request.days;
   const own = request.userId === userId;
 
   const decide = async (approve: boolean) => {
@@ -66,12 +68,13 @@ export function LeaveDecisionModal({ request, onClose }: { request: PendingLeave
     >
       <div className="flex items-center gap-3">
         <Avatar name={user.name} photoUrl={user.photoUrl} size={42} />
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="font-semibold text-ink-2">{user.name}</div>
           <div className="tiny">
             {user.unit} · {user.nip}
           </div>
         </div>
+        <LeaveTypeTag type={request.type} />
       </div>
       <div className="mt-5 grid gap-3 rounded-xl bg-surface-2 p-4 text-[13px] sm:grid-cols-2">
         <div>
@@ -84,17 +87,33 @@ export function LeaveDecisionModal({ request, onClose }: { request: PendingLeave
             {request.days} {t.common.days}
           </div>
         </div>
-        <div>
-          <div className="tiny uppercase tracking-[0.7px]">{t.leave.remaining}</div>
-          <b className={after < 0 ? "text-danger" : "text-ink-2"}>
-            {bal.remaining} {t.common.days}
-          </b>
-          <div className="tiny">{f(t.approvals.balanceAfter, { count: after })}</div>
-        </div>
+        {sick ? (
+          <div>
+            <div className="tiny uppercase tracking-[0.7px]">{t.sick.sickThisYear}</div>
+            <b className="text-ink-2">
+              {bal.sickDays} {t.common.days}
+            </b>
+            <div className="tiny">{t.sick.notCounted}</div>
+          </div>
+        ) : (
+          <div>
+            <div className="tiny uppercase tracking-[0.7px]">{t.leave.remaining}</div>
+            <b className={after < 0 ? "text-danger" : "text-ink-2"}>
+              {bal.remaining} {t.common.days}
+            </b>
+            <div className="tiny">{f(t.approvals.balanceAfter, { count: after })}</div>
+          </div>
+        )}
         <div className="sm:col-span-2">
           <div className="tiny uppercase tracking-[0.7px]">{t.common.reason}</div>
           <p className="text-[13px] text-ink-2">{request.reason}</p>
         </div>
+        {sick && (
+          <div className="sm:col-span-2">
+            <div className="tiny mb-1.5 uppercase tracking-[0.7px]">{t.sick.note}</div>
+            {request.attachment ? <AttachmentLink request={request} /> : <span className="tiny">{t.sick.noNoteAttached}</span>}
+          </div>
+        )}
       </div>
       {request.overlaps.length > 0 && (
         <div className="notice mt-3 flex items-start gap-2">

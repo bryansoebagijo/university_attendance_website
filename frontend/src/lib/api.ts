@@ -7,6 +7,7 @@ import type {
   LeaveBalance,
   LeaveRequest,
   LeaveStatus,
+  LeaveType,
   Location,
   MonthlyReport,
   PendingLeave,
@@ -104,7 +105,7 @@ export const paths = {
   myLeave: "/leave/me",
   pendingLeave: "/leave/pending",
   decidedLeave: "/leave/decided",
-  adminLeave: (q: { status?: string; q?: string }) =>
+  adminLeave: (q: { status?: string; type?: string; q?: string }) =>
     `/admin/leave?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString()}`,
   leaveBalances: "/admin/leave-balances",
   staff: (q: { q?: string; role?: string }) =>
@@ -114,7 +115,8 @@ export const paths = {
 };
 
 export type MonthResponse = { month: string; records: Attendance[] };
-export type CorrectionsResponse = { missing: Attendance[]; past: Attendance[] };
+/** sickExcused: the day has approved sick leave, so it will not be deducted (fixing it is still allowed). */
+export type CorrectionsResponse = { missing: (Attendance & { sickExcused?: boolean })[]; past: Attendance[] };
 export type AdminAttendanceResponse = { records: AdminAttendance[] };
 export type AdminOverview = {
   activeStaff: number;
@@ -124,6 +126,8 @@ export type AdminOverview = {
   workingNow: number;
   missingCount: number;
   onLeaveToday: number;
+  /** The sick-leave part of onLeaveToday. */
+  sickToday: number;
   pendingLeave: number;
 };
 
@@ -170,11 +174,22 @@ export type MyLeaveResponse = { requests: LeaveRequest[]; balance: LeaveBalance 
 export type PendingLeaveResponse = { requests: PendingLeave[] };
 export type LeaveListResponse = { requests: LeaveRequest[] };
 export type LeaveBalancesResponse = { balances: Record<string, LeaveBalance> };
-export type { LeaveStatus };
+export type { LeaveStatus, LeaveType };
+
+/** The doctor's note; opens inline (image/PDF) in a new tab. */
+export const leaveAttachmentUrl = (id: string) => `/api/leave/${encodeURIComponent(id)}/attachment`;
 
 export const leaveApi = {
-  create: (start: string, end: string, reason: string) =>
-    api<{ request: LeaveRequest }>("/leave", { method: "POST", body: JSON.stringify({ start, end, reason }) }),
+  /** Sent as multipart so a doctor's note travels with the request in one step. */
+  create: (input: { type: LeaveType; start: string; end: string; reason: string; attachment?: File | null }) => {
+    const form = new FormData();
+    form.append("type", input.type);
+    form.append("start", input.start);
+    form.append("end", input.end);
+    form.append("reason", input.reason);
+    if (input.attachment) form.append("attachment", input.attachment);
+    return api<{ request: LeaveRequest }>("/leave", { method: "POST", body: form });
+  },
   cancel: (id: string) => api<void>(`/leave/${encodeURIComponent(id)}`, { method: "DELETE" }),
   decide: (id: string, approve: boolean, note?: string) =>
     api<{ request: LeaveRequest }>(`/leave/${encodeURIComponent(id)}/decision`, {

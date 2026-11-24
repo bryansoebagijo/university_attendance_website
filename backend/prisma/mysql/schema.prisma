@@ -124,8 +124,15 @@ enum LeaveStatus {
   REJECTED
 }
 
+/// ANNUAL uses the yearly quota. SICK needs approval too but never touches the quota.
+enum LeaveType {
+  ANNUAL
+  SICK
+}
+
 model LeaveRequest {
   id           String      @id @default(cuid())
+  type         LeaveType   @default(ANNUAL)
   userId       String
   user         User        @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
   startDate    DateTime    @db.Date
@@ -140,8 +147,21 @@ model LeaveRequest {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
+  attachment   LeaveAttachment?
+
   @@index([userId, startDate])
   @@index([status])
+}
+
+/// Supporting document for a request (doctor's note for sick leave). Kept apart so lists never load file bytes.
+model LeaveAttachment {
+  requestId String       @id
+  request   LeaveRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  data      Bytes
+  mimeType  String
+  fileName  String
+  size      Int
+  createdAt DateTime     @default(now())
 }
 
 /// Public holidays and campus days off. Not counted as working days for leave.

@@ -38,6 +38,11 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     res.status(413).json({ error: "FILE_TOO_LARGE" });
     return;
   }
+  // Other multer limits (wrong field name, too many files/fields): the client's fault, not a server error.
+  if (err && typeof err === "object" && "name" in err && err.name === "MulterError") {
+    res.status(400).json({ error: "BAD_UPLOAD" });
+    return;
+  }
   console.error(err);
   res.status(500).json({ error: "INTERNAL" });
 }

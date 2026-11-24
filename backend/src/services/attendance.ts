@@ -100,11 +100,36 @@ export async function fixClockOut(userId: string, attendanceId: string, hhmm: st
   return toAttendanceDto(await prisma.attendance.findUniqueOrThrow({ where: { id: a.id }, include: attendanceInclude }));
 }
 
+// ---- Sick-leave cover --------------------------------------------------------
+
+/**
+ * Which of these attendance rows fall on a day covered by the same person's APPROVED sick leave.
+ * Such days are never deducted from annual leave (e.g. clocked in, then went home sick).
+ */
+export async function sickCovered(rows: { id: string; userId: string; date: Date }[]): Promise<Set<string>> {
+  if (rows.length === 0) return new Set();
+  const dates = rows.map((r) => r.date.getTime());
+  const sick = await prisma.leaveRequest.findMany({
+    where: {
+      type: "SICK",
+      status: "APPROVED",
+      userId: { in: [...new Set(rows.map((r) => r.userId))] },
+      startDate: { lte: new Date(Math.max(...dates)) },
+      endDate: { gte: new Date(Math.min(...dates)) },
+    },
+    select: { userId: true, startDate: true, endDate: true },
+  });
+  return new Set(
+    rows.filter((r) => sick.some((l) => l.userId === r.userId && l.startDate <= r.date && l.endDate >= r.date)).map((r) => r.id),
+  );
+}
+
 // ---- Daily rules (scheduled job) -------------------------------------------
 
 /**
  * 1. Any day before today still CLOCKED_IN → MISSING_CLOCK_OUT.
- * 2. MISSING_CLOCK_OUT past its 2-month fix deadline → DEDUCTED (1 annual-leave day, counted in phase 4).
+ * 2. MISSING_CLOCK_OUT past its 2-month fix deadline → DEDUCTED (1 annual-leave day),
+ *    unless that day is covered by approved sick leave.
  * Safe to run any number of times.
  */
 export async function runDailyRules(now = new Date()) {
@@ -117,9 +142,11 @@ export async function runDailyRules(now = new Date()) {
   // Candidates are at least ~59 days old; the exact month arithmetic is checked per row.
   const candidates = await prisma.attendance.findMany({
     where: { status: "MISSING_CLOCK_OUT", date: { lte: dateOnly(addDays(today, -59)) } },
-    select: { id: true, date: true },
+    select: { id: true, userId: true, date: true },
   });
-  const overdue = candidates.filter((c) => fixDeadline(fromDateOnly(c.date)) < today).map((c) => c.id);
+  const late = candidates.filter((c) => fixDeadline(fromDateOnly(c.date)) < today);
+  const excused = await sickCovered(late);
+  const overdue = late.filter((c) => !excused.has(c.id)).map((c) => c.id);
   const deducted = overdue.length
     ? await prisma.attendance.updateMany({
         where: { id: { in: overdue }, status: "MISSING_CLOCK_OUT" },
