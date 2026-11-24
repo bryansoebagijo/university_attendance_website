@@ -5,10 +5,11 @@ import { useMemo, useRef, useState } from "react";
 import { useSWRConfig } from "swr";
 import { AttachmentLink, Empty, LeaveTypeTag, LoadError, Modal, PageHeading, Skeleton, StatCard, StatusTag } from "@/components/ui";
 import { ApiError, leaveApi, paths, useApi, type HolidaysResponse, type MyLeaveResponse } from "@/lib/api";
-import { addDays, fmtDate, jakartaDate, workdaysBetween } from "@/lib/date";
+import { MySchedule, useFmtDays } from "@/components/schedule";
+import { addDays, fmtDate, jakartaDate, scheduledDaysBetween } from "@/lib/date";
 import { useI18n } from "@/lib/i18n/provider";
 import { useStore } from "@/lib/store";
-import { ATTACHMENT_MAX_BYTES, SICK_BACKDATE_DAYS, SICK_NOTE_MIN_DAYS, type LeaveType } from "@/lib/types";
+import { ATTACHMENT_MAX_BYTES, SICK_BACKDATE_DAYS, SICK_NOTE_MIN_DAYS, type LeaveType, type Schedule } from "@/lib/types";
 
 export default function LeavePage() {
   const { t, f, locale } = useI18n();
@@ -18,7 +19,7 @@ export default function LeavePage() {
   const [cancelling, setCancelling] = useState<string | null>(null);
 
   if (!data) return error ? <LoadError onRetry={() => mutate()} /> : <Skeleton />;
-  const { requests: mine, balance: bal } = data;
+  const { requests: mine, balance: bal, schedule } = data;
 
   const cancel = async (id: string) => {
     setCancelling(id);
@@ -46,6 +47,9 @@ export default function LeavePage() {
         }
       />
 
+      <div className="mb-4">
+        <MySchedule schedule={schedule} />
+      </div>
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard label={t.leave.remaining} value={bal.remaining} unit={t.common.days} icon={<Wallet size={15} />} tone={bal.remaining <= 2 ? "red" : "green"} foot={`${t.leave.quota}: ${bal.quota}`} />
         <StatCard label={t.leave.used} value={bal.used} unit={t.common.days} icon={<CalendarDays size={15} />} tone="plain" />
@@ -105,12 +109,13 @@ export default function LeavePage() {
         </div>
       </div>
 
-      {open && <LeaveForm available={bal.available} onClose={() => setOpen(false)} onCreated={() => mutate()} />}
+      {open && <LeaveForm available={bal.available} schedule={schedule} onClose={() => setOpen(false)} onCreated={() => mutate()} />}
     </>
   );
 }
 
-function LeaveForm({ available, onClose, onCreated }: { available: number; onClose: () => void; onCreated: () => void }) {
+function LeaveForm({ available, schedule, onClose, onCreated }: { available: number; schedule: Schedule; onClose: () => void; onCreated: () => void }) {
+  const fmtDays = useFmtDays();
   const { t, f, locale } = useI18n();
   const { notify } = useStore();
   const { mutate } = useSWRConfig();
@@ -132,7 +137,7 @@ function LeaveForm({ available, onClose, onCreated }: { available: number; onClo
   const year = Number((start || tomorrow).slice(0, 4));
   const { data: hol } = useApi<HolidaysResponse>(paths.holidays(year));
   const holidays = useMemo(() => new Set((hol?.holidays ?? []).map((h) => h.date)), [hol]);
-  const days = workdaysBetween(start, end, holidays);
+  const days = scheduledDaysBetween(start, end, schedule.history, holidays);
   const rangeBad = !!start && !!end && end < start;
   const yearBad = !!start && !!end && start.slice(0, 4) !== end.slice(0, 4);
   const tooEarly = !!start && start < minStart;
@@ -288,6 +293,7 @@ function LeaveForm({ available, onClose, onCreated }: { available: number; onClo
       )}
 
       <div className="mt-4 space-y-2">
+        <p className="tiny">{f(t.schedule.leaveHint, { days: fmtDays(schedule.current.days, { isDefault: schedule.current.isDefault }) })}</p>
         {rangeBad ? (
           <div className="notice notice-bad">{t.leave.invalidRange}</div>
         ) : yearBad ? (
@@ -296,7 +302,7 @@ function LeaveForm({ available, onClose, onCreated }: { available: number; onClo
           <div className="notice notice-bad">{sick ? f(t.sick.errTooLate, { days: SICK_BACKDATE_DAYS }) : t.leave.errPast}</div>
         ) : (
           <div className={`notice ${over || days === 0 ? "notice-bad" : "notice-ok"}`}>
-            {f(t.leave.workdays, { count: days })}
+            {f(t.schedule.workdays, { count: days })}
             {start && days > 0 && <> · {fmtDate(start, locale)}{end !== start && ` – ${fmtDate(end, locale)}`}</>}
             {over && <> · {f(t.leave.overBalance, { remaining: available })}</>}
           </div>

@@ -27,7 +27,31 @@ export interface Location {
   lastScan?: string | null;
 }
 
-export type ScanMethod = "CAMERA" | "UPLOAD";
+/** MANUAL = entered or corrected by an admin. */
+export type ScanMethod = "CAMERA" | "UPLOAD" | "MANUAL";
+
+/** ISO weekdays: 1 = Monday … 7 = Sunday. */
+export type Weekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export interface SchedulePeriod {
+  id: string | null;
+  from: string | null; // YYYY-MM-DD; null for the Monday–Friday default
+  days: number[];
+}
+/** A person's work schedule: what applies today, the next change, and every period (oldest first). */
+export interface Schedule {
+  current: SchedulePeriod & { isDefault: boolean };
+  next: SchedulePeriod | null;
+  history: SchedulePeriod[];
+}
+
+/** A scheduled day an admin excused ("Dibebaskan"). */
+export interface Exemption {
+  id: string;
+  date: string;
+  reason: string;
+  by: { id: string; name: string } | null;
+  at: string;
+}
 
 export type AttendanceStatus =
   | "CLOCKED_IN" // clocked in today, not yet out
@@ -49,13 +73,15 @@ export interface Attendance {
   /** How the QR was read for clock-in / clock-out (null when not clocked out or fixed by hand). */
   inMethod: ScanMethod;
   outMethod: ScanMethod | null;
-  /** Clocked in after 08:00 WIB. */
-  late: boolean;
   fixReason: string | null;
   fixedAt: string | null;
   deductedAt: string | null;
   /** Only for MISSING_CLOCK_OUT: last day it can be fixed. */
   fixDeadline: string | null;
+  /** Set when an admin added or changed the record. */
+  edit: { by: { id: string; name: string } | null; at: string; reason: string | null } | null;
+  /** In lists: false when the day was outside the person's schedule. */
+  scheduled?: boolean;
 }
 
 /** Admin list rows also carry the person. */
@@ -135,6 +161,8 @@ export interface SessionUser {
 /** Staff list row (admin). */
 export interface StaffUser extends SessionUser {
   balance: LeaveBalance | null;
+  /** The schedule that applies today (default = Monday–Friday) and the next change. */
+  schedule: { days: number[]; isDefault: boolean; next: SchedulePeriod | null };
 }
 
 export interface Holiday {
@@ -145,7 +173,14 @@ export interface Holiday {
 export interface MonthlyReportRow {
   user: { id: string; name: string; nip: string; unit: string };
   present: number;
-  late: number;
+  /** Scheduled days in the period. */
+  scheduled: number;
+  /** Attendance on unscheduled days. */
+  outsideSchedule: number;
+  /** Scheduled days an admin excused. */
+  exempt: number;
+  /** Records added or changed by an admin. */
+  adminEdited: number;
   /** Approved annual-leave days. */
   leave: number;
   /** Approved sick-leave days. */

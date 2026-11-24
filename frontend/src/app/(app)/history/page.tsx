@@ -2,18 +2,27 @@
 
 import { CalendarDays, Clock, LogIn } from "lucide-react";
 import { useMemo, useState } from "react";
+import { EditedTag, OutsideTag } from "@/components/schedule";
 import { Empty, LoadError, PageHeading, Skeleton, StatCard, StatusTag } from "@/components/ui";
 import { paths, useApi, type MonthResponse } from "@/lib/api";
 import { addMonths, fmtDate, fmtDuration, fmtMonth, fmtTime, fmtWeekday, jakartaDate, minutesBetween } from "@/lib/date";
 import { useI18n } from "@/lib/i18n/provider";
 
 export default function HistoryPage() {
-  const { t, locale } = useI18n();
+  const { t, f, locale } = useI18n();
   const [month, setMonth] = useState(jakartaDate().slice(0, 7));
   // The last 12 months, newest first.
   const months = useMemo(() => Array.from({ length: 12 }, (_, i) => addMonths(`${jakartaDate().slice(0, 7)}-01`, -i).slice(0, 7)), []);
   const { data, error, mutate } = useApi<MonthResponse>(paths.myMonth(month));
   const rows = data?.records ?? [];
+  // Excused days ("Dibebaskan") appear between the records, newest first.
+  const items = useMemo(
+    () =>
+      [...rows.map((a) => ({ kind: "record" as const, date: a.date, a })), ...(data?.exemptions ?? []).map((e) => ({ kind: "exempt" as const, date: e.date, e }))].sort(
+        (x, y) => y.date.localeCompare(x.date),
+      ),
+    [rows, data],
+  );
   const totalMins = rows.reduce((s, a) => s + (a.clockOut ? minutesBetween(a.clockIn, a.clockOut) : 0), 0);
   const avgInMins = rows.length
     ? Math.round(
@@ -65,26 +74,24 @@ export default function HistoryPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((a) => (
-                <tr key={a.id}>
-                  <td data-label={t.common.date}>
-                    <strong>{fmtDate(a.date, locale)}</strong>
-                    <small>{fmtWeekday(a.date, locale)}</small>
-                  </td>
-                  <td data-label={t.common.clockIn}>{fmtTime(a.clockIn)}</td>
-                  <td data-label={t.common.clockOut}>
-                    {fmtTime(a.clockOut)}
-                    {a.status === "FIXED" && <small title={a.fixReason ?? undefined}>✎ {a.fixReason}</small>}
-                  </td>
-                  <td data-label={t.common.duration}>{a.clockOut ? fmtDuration(minutesBetween(a.clockIn, a.clockOut), locale) : "—"}</td>
-                  <td data-label={t.common.location}>
-                    {a.inLocation.name}
-                  </td>
-                  <td data-label={t.common.status}>
-                    <StatusTag status={a.status} />
-                  </td>
-                </tr>
-              ))}
+              {items.map((it) =>
+                it.kind === "exempt" ? (
+                  <tr key={it.e.id}>
+                    <td data-label={t.common.date}>
+                      <strong>{fmtDate(it.e.date, locale)}</strong>
+                      <small>{fmtWeekday(it.e.date, locale)}</small>
+                    </td>
+                    <td data-label={t.common.note} colSpan={4} className="wide">
+                      <small className="!mt-0">{f(t.corrections.exemptedBy, { name: it.e.by?.name ?? "Admin", reason: it.e.reason })}</small>
+                    </td>
+                    <td data-label={t.common.status}>
+                      <span className="tag tag-gray">{t.corrections.states.EXEMPT}</span>
+                    </td>
+                  </tr>
+                ) : (
+                  <RecordRow key={it.a.id} a={it.a} />
+                ),
+              )}
             </tbody>
           </table>
           {error ? (
@@ -96,10 +103,39 @@ export default function HistoryPage() {
               <Skeleton />
             </div>
           ) : (
-            !rows.length && <Empty>{t.common.noData}</Empty>
+            !items.length && <Empty>{t.common.noData}</Empty>
           )}
         </div>
       </div>
     </>
+  );
+}
+
+function RecordRow({ a }: { a: MonthResponse["records"][number] }) {
+  const { t, f, locale } = useI18n();
+  return (
+                <tr key={a.id}>
+                  <td data-label={t.common.date}>
+                    <strong>{fmtDate(a.date, locale)}</strong>
+                    <small>{fmtWeekday(a.date, locale)}</small>
+                  </td>
+                  <td data-label={t.common.clockIn}>
+                    {fmtTime(a.clockIn)}
+                    {a.scheduled === false && <OutsideTag />}
+                  </td>
+                  <td data-label={t.common.clockOut}>
+                    {fmtTime(a.clockOut)}
+                    <EditedTag record={a} />
+                    {a.status === "FIXED" && <small title={a.fixReason ?? undefined}>✎ {a.fixReason}</small>}
+                    {a.edit && <small>{f(t.corrections.editedBy, { name: a.edit.by?.name ?? "Admin", reason: a.edit.reason ?? "" })}</small>}
+                  </td>
+                  <td data-label={t.common.duration}>{a.clockOut ? fmtDuration(minutesBetween(a.clockIn, a.clockOut), locale) : "—"}</td>
+                  <td data-label={t.common.location}>
+                    {a.inLocation.name}
+                  </td>
+                  <td data-label={t.common.status}>
+                    <StatusTag status={a.status} />
+                  </td>
+                </tr>
   );
 }

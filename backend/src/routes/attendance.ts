@@ -5,7 +5,9 @@ import { requireAuth } from "../auth/middleware.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { route } from "../lib/http.js";
-import { addMonths, dateOnly, jakartaDate, monthRange } from "../lib/time.js";
+import { addMonths, dateOnly, fromDateOnly, jakartaDate, monthRange } from "../lib/time.js";
+import { holidaysBetween } from "../services/leave.js";
+import { loadSchedule, scheduleDto, scheduledFlags } from "../services/schedule.js";
 import { attendanceInclude, fixClockOut, scan, toAttendanceDto, sickCovered } from "../services/attendance.js";
 
 export const attendanceRouter = Router();
@@ -44,12 +46,14 @@ attendanceRouter.get(
     const today = jakartaDate();
     const { from } = monthRange(today.slice(0, 7));
     const yearStart = dateOnly(`${today.slice(0, 4)}-01-01`);
-    const [todayRec, recent, monthCount, missing, deductedThisYear] = await Promise.all([
+    const [todayRec, recent, monthCount, missing, deductedThisYear, schedule, todayHoliday] = await Promise.all([
       prisma.attendance.findUnique({ where: { userId_date: { userId, date: dateOnly(today) } }, include: attendanceInclude }),
       prisma.attendance.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 5, include: attendanceInclude }),
       prisma.attendance.count({ where: { userId, date: { gte: dateOnly(from), lte: dateOnly(today) } } }),
       prisma.attendance.findMany({ where: { userId, status: "MISSING_CLOCK_OUT" }, orderBy: { date: "asc" }, include: attendanceInclude }),
       prisma.attendance.count({ where: { userId, status: "DEDUCTED", date: { gte: yearStart } } }),
+      loadSchedule(userId),
+      holidaysBetween(today, today),
     ]);
     res.json({
       today: todayRec ? toAttendanceDto(todayRec) : null,
@@ -57,6 +61,9 @@ attendanceRouter.get(
       monthCount,
       missing: missing.map(toAttendanceDto),
       deductedThisYear,
+      /** My work schedule (current + next change + history). */
+      schedule: scheduleDto(schedule, today),
+      todayIsHoliday: todayHoliday.has(today),
     });
   }),
 );
@@ -69,12 +76,20 @@ attendanceRouter.get(
   route(async (req, res) => {
     const month = monthSchema.parse(req.query).month ?? jakartaDate().slice(0, 7);
     const { from, to } = monthRange(month);
-    const rows = await prisma.attendance.findMany({
-      where: { userId: req.user!.id, date: { gte: dateOnly(from), lte: dateOnly(to) } },
-      orderBy: { date: "desc" },
-      include: attendanceInclude,
+    const userId = req.user!.id;
+    const range = { gte: dateOnly(from), lte: dateOnly(to) };
+    const [rows, exemptions, holidays] = await Promise.all([
+      prisma.attendance.findMany({ where: { userId, date: range }, orderBy: { date: "desc" }, include: attendanceInclude }),
+      prisma.attendanceExemption.findMany({ where: { userId, date: range }, orderBy: { date: "desc" }, include: { createdBy: { select: { id: true, name: true } } } }),
+      holidaysBetween(from, to),
+    ]);
+    const flags = await scheduledFlags(rows, holidays);
+    res.json({
+      month,
+      records: rows.map((r) => ({ ...toAttendanceDto(r), scheduled: flags.get(r.id) ?? true })),
+      /** Scheduled days an admin excused ("Dibebaskan"). */
+      exemptions: exemptions.map((e) => ({ id: e.id, date: fromDateOnly(e.date), reason: e.reason, by: e.createdBy, at: e.createdAt.toISOString() })),
     });
-    res.json({ month, records: rows.map(toAttendanceDto) });
   }),
 );
 

@@ -1,8 +1,10 @@
 "use client";
 
-import { Copy, KeyRound, Pencil, Plus, Trash2, UserX } from "lucide-react";
+import { CalendarRange, Copy, KeyRound, Pencil, Plus, Trash2, UserX } from "lucide-react";
 import { useEffect, useState } from "react";
+import { DayChips, ScheduleEditor } from "@/components/schedule";
 import { Avatar, Empty, LoadError, Modal, PageHeading, Skeleton } from "@/components/ui";
+import { fmtDate } from "@/lib/date";
 import { ApiError, paths, staffApi, useApi, type StaffInput, type StaffResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/provider";
 import { useSession } from "@/lib/me";
@@ -12,8 +14,9 @@ import type { Role, StaffUser } from "@/lib/types";
 const ROLES: Role[] = ["USER", "APPROVER", "ADMIN"];
 
 export default function AdminUsersPage() {
-  const { t } = useI18n();
+  const { t, f, locale } = useI18n();
   const { userId } = useSession();
+  const [scheduling, setScheduling] = useState<StaffUser | null>(null);
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function AdminUsersPage() {
               <tr>
                 <th>{t.common.name}</th>
                 <th>{t.admin.nip}</th>
-                <th>{t.admin.unit}</th>
+                <th>{t.schedule.column}</th>
                 <th>{t.admin.role}</th>
                 <th>{t.admin.quota}</th>
                 <th>{t.admin.remaining}</th>
@@ -79,12 +82,22 @@ export default function AdminUsersPage() {
                           <strong>
                             {u.name} {self && <span className="tag tag-gray ml-1">{t.admin.you}</span>}
                           </strong>
-                          <small>{u.email}</small>
+                          <small>
+                            {u.email}
+                            {u.unit && ` · ${u.unit}`}
+                          </small>
                         </div>
                       </div>
                     </td>
                     <td data-label={t.admin.nip}>{u.nip}</td>
-                    <td data-label={t.admin.unit}>{u.unit || "—"}</td>
+                    <td data-label={t.schedule.column}>
+                      <button className="text-left" onClick={() => setScheduling(u)} title={t.schedule.edit}>
+                        <DayChips days={u.schedule.days} />
+                        {u.schedule.next?.from && (
+                          <small className="!mt-1">{f(t.schedule.nextChange, { date: fmtDate(u.schedule.next.from, locale), days: u.schedule.next.days.map((d) => t.schedule.short[d - 1]).join(", ") })}</small>
+                        )}
+                      </button>
+                    </td>
                     <td data-label={t.admin.role}>
                       <span className={`tag ${u.role === "ADMIN" ? "tag-bad" : u.role === "APPROVER" ? "tag-warn" : "tag-gray"}`}>{t.roles[u.role]}</span>
                     </td>
@@ -100,6 +113,9 @@ export default function AdminUsersPage() {
                       <div className="flex flex-wrap justify-end gap-1.5">
                         <button className="btn btn-sm" onClick={() => setEditing(u)}>
                           <Pencil size={13} /> {t.common.edit}
+                        </button>
+                        <button className="btn btn-sm" onClick={() => setScheduling(u)}>
+                          <CalendarRange size={13} /> {t.schedule.edit}
                         </button>
                         {!self && (
                           <button className="btn btn-sm" onClick={() => setResetting(u)}>
@@ -153,6 +169,7 @@ export default function AdminUsersPage() {
         />
       )}
       {temp && <TempPassword name={temp.name} password={temp.password} onClose={() => setTemp(null)} />}
+      {scheduling && <ScheduleEditor user={scheduling} onClose={() => setScheduling(null)} />}
       {deleting && <DeleteStaff user={deleting} onClose={() => setDeleting(null)} onDone={() => void mutate()} />}
     </>
   );

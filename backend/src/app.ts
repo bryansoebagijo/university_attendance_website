@@ -13,6 +13,7 @@ import { adminHolidaysRouter, holidaysRouter } from "./routes/holidays.js";
 import { leaveRouter } from "./routes/leave.js";
 import { reportsRouter } from "./routes/reports.js";
 import { staffRouter } from "./routes/staff.js";
+import { correctionsRouter } from "./routes/corrections.js";
 import { meRouter } from "./routes/me.js";
 import { usersRouter } from "./routes/users.js";
 
@@ -37,6 +38,7 @@ export function createApp() {
   app.use("/api/leave", leaveRouter);
   app.use("/api/holidays", holidaysRouter);
   // Specific admin sub-routers first, then the general admin router.
+  app.use("/api/admin", correctionsRouter); // schedules, day roster, attendance corrections
   app.use("/api/admin/users", staffRouter);
   app.use("/api/admin/holidays", adminHolidaysRouter);
   app.use("/api/admin/reports", reportsRouter);

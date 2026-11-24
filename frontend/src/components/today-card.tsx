@@ -2,11 +2,21 @@
 
 import { CheckCircle2, LogIn, LogOut, QrCode } from "lucide-react";
 import Link from "next/link";
-import { fmtDateLong, fmtDuration, fmtTime, jakartaDate, minutesBetween } from "@/lib/date";
+import { fmtDateLong, fmtDuration, fmtTime, isoWeekday, jakartaDate, minutesBetween, scheduleDaysOn } from "@/lib/date";
 import { useI18n } from "@/lib/i18n/provider";
-import type { Attendance } from "@/lib/types";
+import type { Attendance, Schedule } from "@/lib/types";
+import { MySchedule } from "./schedule";
 
-export function TodayCard({ record }: { record: Attendance | null | undefined }) {
+export function TodayCard({
+  record,
+  schedule,
+  holiday = false,
+}: {
+  record: Attendance | null | undefined;
+  /** My work schedule; when given, shown under the date with a note on unscheduled days. */
+  schedule?: Schedule;
+  holiday?: boolean;
+}) {
   const { t, f, locale } = useI18n();
   const today = jakartaDate();
   const state: "none" | "in" | "done" = !record ? "none" : record.clockOut ? "done" : "in";
@@ -33,6 +43,14 @@ export function TodayCard({ record }: { record: Attendance | null | undefined })
       <div className="w-full min-w-0 flex-1">
         <div className="eyebrow">{t.dashboard.todayTitle}</div>
         <h2 className="mt-2 font-display text-[19px] font-bold text-ink">{fmtDateLong(today, locale)}</h2>
+        {schedule && (
+          <div className="mt-2">
+            <MySchedule schedule={schedule} />
+          </div>
+        )}
+        {schedule && !record && (holiday || !scheduleDaysOn(schedule.history, today).includes(isoWeekday(today))) && (
+          <div className="notice mt-3 !py-2 text-[12px]">{holiday ? t.schedule.holidayToday : t.schedule.notToday}</div>
+        )}
 
         <ol className="mt-5 space-y-3">
           <TimelineRow

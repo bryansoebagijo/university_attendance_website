@@ -2,8 +2,6 @@
 export const TZ = "Asia/Jakarta";
 const OFFSET = "+07:00";
 
-/** Clock-ins after this local time count as late. */
-export const WORK_START = "08:00";
 /** A missing clock-out must be fixed within this many months, or 1 leave day is deducted. */
 export const FIX_WINDOW_MONTHS = 2;
 

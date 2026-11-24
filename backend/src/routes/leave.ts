@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from "../auth/middleware.js";
 import { prisma } from "../db.js";
 import { HttpError, route } from "../lib/http.js";
 import { jakartaDate } from "../lib/time.js";
+import { loadSchedule, scheduleDto } from "../services/schedule.js";
 import { cancelRequest, createRequest, decide, getBalance, leaveInclude, overlapsFor, toLeaveDto, type NewAttachment } from "../services/leave.js";
 
 export const leaveRouter = Router();
@@ -20,11 +21,13 @@ leaveRouter.get(
   "/me",
   route(async (req, res) => {
     const userId = req.user!.id;
-    const [rows, balance] = await Promise.all([
+    const [rows, balance, schedule] = await Promise.all([
       prisma.leaveRequest.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 100, include: leaveInclude }),
       getBalance(userId, thisYear()),
+      loadSchedule(userId),
     ]);
-    res.json({ requests: rows.map(toLeaveDto), balance });
+    // The schedule lets the form count leave days the same way the server does.
+    res.json({ requests: rows.map(toLeaveDto), balance, schedule: scheduleDto(schedule, jakartaDate()) });
   }),
 );
 

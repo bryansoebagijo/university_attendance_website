@@ -95,7 +95,7 @@ function TeacherDashboard() {
       </div>
 
       <div className="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1.75fr)_minmax(290px,1fr)]">
-        <TodayCard record={ov.today} />
+        <TodayCard record={ov.today} schedule={ov.schedule} holiday={ov.todayIsHoliday} />
         <div className="grid grid-cols-2 gap-4 xl:grid-cols-1">
           <StatCard
             label={t.dashboard.leaveBalance}
@@ -212,14 +212,16 @@ function AdminDashboard() {
   if (!ov || !mine) return error ? <LoadError onRetry={() => void Promise.all([mutate(), mutateMine()])} /> : <Skeleton />;
   const onLeaveToday = ov.onLeaveToday;
   const pendingLeave = ov.pendingLeave;
-  const late = ov.lateToday;
   const done = ov.doneToday;
   const working = ov.workingNow;
-  const absent = Math.max(0, ov.activeStaff - ov.presentToday - onLeaveToday);
+  // Measured against today's schedules; people present on an unscheduled day still show as present.
+  const absent = ov.notYetToday;
+  const total = Math.max(ov.expectedToday, done + working + onLeaveToday + absent + ov.exemptToday);
   const segs = [
     { label: t.dashboard.legendPresent, n: done, color: "#268369" },
     { label: t.dashboard.legendWorking, n: working, color: "#7ca6a3" },
     { label: t.dashboard.legendLeave, n: onLeaveToday, color: "#d6bc72" },
+    { label: t.corrections.states.EXEMPT, n: ov.exemptToday, color: "#9aa492" },
     { label: t.dashboard.legendAbsent, n: absent, color: "#cb9d86" },
   ];
 
@@ -243,8 +245,8 @@ function AdminDashboard() {
       <WelcomePanel user={me} />
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={t.dashboard.statTotal} value={ov.activeStaff} unit={t.dashboard.people} foot={t.dashboard.statTotalFoot} icon={<Users size={15} />} tone="plain" />
-        <StatCard label={t.dashboard.statPresent} value={ov.presentToday} unit={t.dashboard.people} foot={f(t.dashboard.statPresentFoot, { late })} icon={<UserCheck size={15} />} tone="green" />
+        <StatCard label={t.dashboard.statTotal} value={ov.expectedToday} unit={t.dashboard.people} foot={f(t.dashboard.statTotalFoot, { count: ov.activeStaff })} icon={<Users size={15} />} tone="plain" />
+        <StatCard label={t.dashboard.statPresent} value={ov.presentToday} unit={t.dashboard.people} foot={f(t.dashboard.statPresentFoot, { count: ov.notYetToday })} icon={<UserCheck size={15} />} tone="green" />
         <StatCard label={t.dashboard.statLeave} value={onLeaveToday} unit={t.dashboard.people} foot={ov.sickToday ? f(t.sick.onLeaveSick, { count: ov.sickToday }) : t.dashboard.statLeaveFoot} icon={<CalendarDays size={15} />} tone="gold" />
         <StatCard label={t.dashboard.statFollowUp} value={pendingLeave + ov.missingCount} foot={t.dashboard.statFollowUpFoot} icon={<Clock size={15} />} tone="red" />
       </div>
@@ -253,11 +255,11 @@ function AdminDashboard() {
         <div className="card">
           <div className="mb-5">
             <h2 className="card-title">{t.dashboard.summaryTitle}</h2>
-            <p className="card-sub">{f(t.dashboard.summarySub, { date: fmtDateLong(today, locale), count: ov.activeStaff })}</p>
+            <p className="card-sub">{f(t.dashboard.summarySub, { date: fmtDateLong(today, locale), count: ov.expectedToday })}</p>
           </div>
           <div className="progress">
             {segs.map((s) => (
-              <span key={s.label} style={{ background: s.color, width: `${ov.activeStaff ? (s.n / ov.activeStaff) * 100 : 0}%` }} />
+              <span key={s.label} style={{ background: s.color, width: `${total ? (s.n / total) * 100 : 0}%` }} />
             ))}
           </div>
           <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-muted">
@@ -283,7 +285,7 @@ function AdminDashboard() {
 
       <h2 className="card-title mb-3 mt-7">{t.dashboard.myAttendance}</h2>
       <MissingAlert missing={mine.missing} />
-      <TodayCard record={mine.today} />
+      <TodayCard record={mine.today} schedule={mine.schedule} holiday={mine.todayIsHoliday} />
     </>
   );
 }

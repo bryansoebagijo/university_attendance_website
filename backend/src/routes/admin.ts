@@ -6,10 +6,11 @@ import { prisma } from "../db.js";
 import { containsIgnoreCase } from "../lib/db-dialect.js";
 import { HttpError, route } from "../lib/http.js";
 import { hashKioskKey, makeToken, newKioskKey, newSecret, SLOT_MS } from "../lib/qr.js";
-import { dateOnly, jakartaDate, jakartaTime, WORK_START } from "../lib/time.js";
+import { dateOnly, fromDateOnly, jakartaDate } from "../lib/time.js";
 import { photoUrl } from "../lib/user-dto.js";
 import { attendanceInclude, toAttendanceDto } from "../services/attendance.js";
-import { getBalances, leaveInclude, toLeaveDto } from "../services/leave.js";
+import { getBalances, holidaysBetween, leaveInclude, toLeaveDto } from "../services/leave.js";
+import { isScheduled, loadSchedules, scheduledFlags } from "../services/schedule.js";
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("ADMIN"));
@@ -43,9 +44,13 @@ adminRouter.get(
         user: { select: { id: true, name: true, nip: true, unit: true, photo: { select: { updatedAt: true } } } },
       },
     });
+    const dates = rows.map((r) => fromDateOnly(r.date)).sort();
+    const holidays = dates.length ? await holidaysBetween(dates[0], dates[dates.length - 1]) : new Set<string>();
+    const flags = await scheduledFlags(rows, holidays);
     res.json({
       records: rows.map((r) => ({
         ...toAttendanceDto(r),
+        scheduled: flags.get(r.id) ?? true,
         user: {
           id: r.user.id,
           name: r.user.name,
@@ -62,19 +67,32 @@ adminRouter.get(
 adminRouter.get(
   "/overview",
   route(async (_req, res) => {
-    const today = dateOnly(jakartaDate());
-    const [activeStaff, todayRows, missingCount, onLeaveToday, sickToday, pendingLeave] = await Promise.all([
-      prisma.user.count({ where: { active: true } }),
-      prisma.attendance.findMany({ where: { date: today }, select: { clockIn: true, clockOut: true } }),
+    const todayStr = jakartaDate();
+    const today = dateOnly(todayStr);
+    const [active, todayRows, missingCount, onLeaveToday, sickToday, pendingLeave, leaveToday, exemptToday, holidays, schedules] = await Promise.all([
+      prisma.user.findMany({ where: { active: true }, select: { id: true } }),
+      prisma.attendance.findMany({ where: { date: today }, select: { userId: true, clockIn: true, clockOut: true } }),
       prisma.attendance.count({ where: { status: "MISSING_CLOCK_OUT" } }),
       prisma.leaveRequest.count({ where: { status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } } }),
       prisma.leaveRequest.count({ where: { type: "SICK", status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } } }),
       prisma.leaveRequest.count({ where: { status: "PENDING" } }),
+      prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } }, select: { userId: true } }),
+      prisma.attendanceExemption.findMany({ where: { date: today }, select: { userId: true } }),
+      holidaysBetween(todayStr, todayStr),
+      loadSchedules(),
     ]);
+    // Expected today = active staff whose schedule includes today.
+    const expected = active.filter((u) => isScheduled(schedules.get(u.id), todayStr, holidays)).map((u) => u.id);
+    const present = new Set(todayRows.map((r) => r.userId));
+    const excused = new Set([...leaveToday, ...exemptToday].map((r) => r.userId));
     res.json({
-      activeStaff,
+      activeStaff: active.length,
+      /** Active staff scheduled today (0 on a holiday). */
+      expectedToday: expected.length,
+      /** Scheduled today, not here yet, and not on leave or excused. */
+      notYetToday: expected.filter((id) => !present.has(id) && !excused.has(id)).length,
+      exemptToday: exemptToday.length,
       presentToday: todayRows.length,
-      lateToday: todayRows.filter((r) => jakartaTime(r.clockIn) > WORK_START).length,
       doneToday: todayRows.filter((r) => r.clockOut).length,
       workingNow: todayRows.filter((r) => !r.clockOut).length,
       missingCount,

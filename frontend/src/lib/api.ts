@@ -12,8 +12,10 @@ import type {
   MonthlyReport,
   PendingLeave,
   Role,
+  Schedule,
   SessionUser,
   StaffUser,
+  Exemption,
 } from "./types";
 
 export class ApiError extends Error {
@@ -78,6 +80,8 @@ export interface AttendanceOverview {
   monthCount: number;
   missing: Attendance[];
   deductedThisYear: number;
+  schedule: Schedule;
+  todayIsHoliday: boolean;
 }
 
 export const attendanceApi = {
@@ -112,16 +116,22 @@ export const paths = {
     `/admin/users?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString()}`,
   holidays: (year: number) => `/holidays?year=${year}`,
   monthlyReport: (month: string) => `/admin/reports/monthly?month=${month}`,
+  adminDay: (date: string) => `/admin/day?date=${date}`,
+  staffSchedule: (id: string) => `/admin/users/${encodeURIComponent(id)}/schedules`,
 };
 
-export type MonthResponse = { month: string; records: Attendance[] };
+export type MonthResponse = { month: string; records: Attendance[]; exemptions: Exemption[] };
 /** sickExcused: the day has approved sick leave, so it will not be deducted (fixing it is still allowed). */
 export type CorrectionsResponse = { missing: (Attendance & { sickExcused?: boolean })[]; past: Attendance[] };
 export type AdminAttendanceResponse = { records: AdminAttendance[] };
 export type AdminOverview = {
   activeStaff: number;
+  /** Active staff scheduled today. */
+  expectedToday: number;
+  /** Scheduled today, not here yet, not on leave or excused. */
+  notYetToday: number;
+  exemptToday: number;
   presentToday: number;
-  lateToday: number;
   doneToday: number;
   workingNow: number;
   missingCount: number;
@@ -170,7 +180,7 @@ export const devApi = {
 
 // ---- Leave ---------------------------------------------------------------------
 
-export type MyLeaveResponse = { requests: LeaveRequest[]; balance: LeaveBalance };
+export type MyLeaveResponse = { requests: LeaveRequest[]; balance: LeaveBalance; schedule: Schedule };
 export type PendingLeaveResponse = { requests: PendingLeave[] };
 export type LeaveListResponse = { requests: LeaveRequest[] };
 export type LeaveBalancesResponse = { balances: Record<string, LeaveBalance> };
@@ -220,3 +230,31 @@ export const holidaysApi = {
   remove: (date: string) => api<void>(`/admin/holidays/${date}`, { method: "DELETE" }),
 };
 export type { MonthlyReport };
+
+// ---- Admin: schedules & attendance corrections ---------------------------------------
+
+export type DayState = "PRESENT" | "LEAVE" | "SICK" | "EXEMPT" | "ABSENT" | "NOT_YET" | "UPCOMING";
+export interface DayRow {
+  user: { id: string; name: string; nip: string; unit: string; photoUrl: string | null };
+  scheduled: boolean;
+  state: DayState;
+  record: Attendance | null;
+  exemption: Exemption | null;
+  leave: { id: string; type: LeaveType } | null;
+}
+export type DayResponse = { date: string; holiday: boolean; rows: DayRow[] };
+
+const json = (method: string, body?: unknown) => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
+
+export const correctionsApi = {
+  setSchedule: (userId: string, effectiveFrom: string, days: number[]) =>
+    api<{ schedule: Schedule }>(paths.staffSchedule(userId), json("PUT", { effectiveFrom, days })),
+  deleteSchedule: (userId: string, scheduleId: string) =>
+    api<{ schedule: Schedule }>(`${paths.staffSchedule(userId)}/${encodeURIComponent(scheduleId)}`, json("DELETE")),
+  /** Create or correct one person's record for one date (times are HH:mm, WIB). */
+  saveAttendance: (userId: string, date: string, body: { clockIn: string; clockOut: string | null; reason: string; locationId?: string }) =>
+    api<{ record: Attendance }>(`/admin/attendance/${encodeURIComponent(userId)}/${date}`, json("PUT", body)),
+  deleteAttendance: (id: string, reason: string) => api<void>(`/admin/attendance/${encodeURIComponent(id)}`, json("DELETE", { reason })),
+  exempt: (userId: string, date: string, reason: string) => api<{ exemption: Exemption }>("/admin/exemptions", json("POST", { userId, date, reason })),
+  unexempt: (id: string) => api<void>(`/admin/exemptions/${encodeURIComponent(id)}`, json("DELETE")),
+};

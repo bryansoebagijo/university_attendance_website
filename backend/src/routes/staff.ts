@@ -7,6 +7,7 @@ import { containsIgnoreCase } from "../lib/db-dialect.js";
 import { HttpError, route } from "../lib/http.js";
 import { hashPassword, temporaryPassword } from "../lib/password.js";
 import { jakartaDate } from "../lib/time.js";
+import { currentAndNext, loadSchedules } from "../services/schedule.js";
 import { toUserDto, userSelect } from "../lib/user-dto.js";
 import { getBalances } from "../services/leave.js";
 
@@ -25,7 +26,8 @@ staffRouter.get(
   "/",
   route(async (req, res) => {
     const { q, role } = listSchema.parse(req.query);
-    const [users, balances] = await Promise.all([
+    const today = jakartaDate();
+    const [users, balances, schedules] = await Promise.all([
       prisma.user.findMany({
         where: {
           ...(role ? { role } : {}),
@@ -36,9 +38,15 @@ staffRouter.get(
         orderBy: [{ active: "desc" }, { name: "asc" }],
         select: userSelect,
       }),
-      getBalances(Number(jakartaDate().slice(0, 4))),
+      getBalances(Number(today.slice(0, 4))),
+      loadSchedules(),
     ]);
-    res.json({ users: users.map((u) => ({ ...toUserDto(u), balance: balances[u.id] ?? null })) });
+    res.json({
+      users: users.map((u) => {
+        const { current, next } = currentAndNext(schedules.get(u.id) ?? [], today);
+        return { ...toUserDto(u), balance: balances[u.id] ?? null, schedule: { days: current.days, isDefault: current.isDefault, next } };
+      }),
+    });
   }),
 );
 

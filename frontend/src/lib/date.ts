@@ -73,6 +73,31 @@ export function workdaysBetween(start: string, end: string, holidays: ReadonlySe
   return n;
 }
 
+/** ISO weekday: 1 = Monday … 7 = Sunday. */
+export function isoWeekday(date: string): number {
+  return new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
+}
+
+/** Weekdays that apply on a date: the newest period starting on or before it, else Monday–Friday. Mirrors the backend. */
+export function scheduleDaysOn(history: { from: string | null; days: number[] }[] | undefined, date: string): number[] {
+  let days = [1, 2, 3, 4, 5];
+  for (const p of history ?? []) if (p.from && p.from <= date) days = p.days;
+  return days;
+}
+
+/** Scheduled days (minus holidays) between two dates, inclusive: how leave is counted. */
+export function scheduledDaysBetween(
+  start: string,
+  end: string,
+  history: { from: string | null; days: number[] }[] | undefined,
+  holidays: ReadonlySet<string> = new Set(),
+): number {
+  if (!start || !end || end < start) return 0;
+  let n = 0;
+  for (let d = start; d <= end; d = addDays(d, 1)) if (!holidays.has(d) && scheduleDaysOn(history, d).includes(isoWeekday(d))) n++;
+  return n;
+}
+
 export function minutesBetween(a: string, b: string): number {
   return Math.max(0, Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000));
 }

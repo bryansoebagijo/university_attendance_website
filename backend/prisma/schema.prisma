@@ -49,6 +49,57 @@ model User {
   attendance       Attendance[]
   leaveRequests    LeaveRequest[] @relation("LeaveRequester")
   leaveDecisions   LeaveRequest[] @relation("LeaveApprover")
+  schedules        WorkSchedule[]
+  exemptions       AttendanceExemption[] @relation("ExemptedUser")
+  exemptionsGiven  AttendanceExemption[] @relation("ExemptionCreator")
+  attendanceEdits  Attendance[]          @relation("AttendanceEditor")
+}
+
+/// Which weekdays a person is expected on campus, from a date on. The newest row with
+/// effectiveFrom <= a date applies to that date; with no row at all, Monday–Friday applies.
+model WorkSchedule {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  effectiveFrom DateTime @db.Date
+  /// ISO weekdays as digits, 1 = Monday … 6 = Saturday, e.g. "24" = Tuesday + Thursday.
+  days          String
+  setById       String?
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, effectiveFrom])
+}
+
+/// A scheduled day an admin excused ("Bebaskan"): not counted as absent and costs no leave.
+model AttendanceExemption {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("ExemptedUser", fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  reason      String   @db.Text
+  createdById String?
+  createdBy   User?    @relation("ExemptionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+/// Audit trail of admin corrections (schedule changes, attendance added/edited/deleted, exemptions).
+model AdminAction {
+  id           String    @id @default(cuid())
+  actorId      String
+  targetUserId String
+  /// The attendance day concerned, when there is one.
+  date         DateTime? @db.Date
+  /// e.g. ATTENDANCE_CREATE, ATTENDANCE_EDIT, ATTENDANCE_DELETE, EXEMPT, UNEXEMPT, SCHEDULE_SET, SCHEDULE_DELETE
+  action       String
+  reason       String?   @db.Text
+  /// Before/after values, for reference.
+  details      Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([targetUserId, createdAt])
 }
 
 /// Profile picture bytes, kept apart from User so user lists never load images.
@@ -80,6 +131,8 @@ model Location {
 enum ScanMethod {
   CAMERA
   UPLOAD
+  /// Entered or corrected by an admin.
+  MANUAL
 }
 
 enum AttendanceStatus {
@@ -109,6 +162,11 @@ model Attendance {
   fixReason     String?          @db.Text
   fixedAt       DateTime?
   deductedAt    DateTime?
+  /// Set when an admin added or changed this record.
+  editedById    String?
+  editedBy      User?            @relation("AttendanceEditor", fields: [editedById], references: [id], onDelete: SetNull)
+  editedAt      DateTime?
+  editReason    String?          @db.Text
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 

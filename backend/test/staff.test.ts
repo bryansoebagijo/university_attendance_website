@@ -133,7 +133,7 @@ describe("holidays", () => {
 
   it("are managed by admins, visible to everyone, and skipped when counting leave days", async () => {
     const day = futureWeekday();
-    const teacher = await sessionCookie("dewi@ista.ac.id");
+    const teacher = await sessionCookie("ahmad@ista.ac.id"); // Mon–Fri default schedule
     expect((await request(app).put(`/api/admin/holidays/${day}`).set("Cookie", teacher).send({ name: "x" })).status).toBe(403);
 
     const put = await request(app).put(`/api/admin/holidays/${day}`).set("Cookie", admin).send({ name: "Libur kampus" });
@@ -142,14 +142,14 @@ describe("holidays", () => {
     expect(list.body.holidays).toContainEqual({ date: day, name: "Libur kampus" });
 
     // A one-day request on the holiday has no working days.
-    await prisma.leaveRequest.deleteMany({ where: { userId: "u3" } });
+    await prisma.leaveRequest.deleteMany({ where: { userId: "u2" } });
     const leave = await request(app).post("/api/leave").set("Cookie", teacher).send({ start: day, end: day, reason: "Tes hari libur" });
     expect(leave.body.error).toBe("NO_WORKDAYS");
 
     expect((await request(app).delete(`/api/admin/holidays/${day}`).set("Cookie", admin)).status).toBe(204);
     const again = await request(app).post("/api/leave").set("Cookie", teacher).send({ start: day, end: day, reason: "Tes hari libur" });
     expect(again.body.request.days).toBe(1);
-    await prisma.leaveRequest.deleteMany({ where: { userId: "u3" } });
+    await prisma.leaveRequest.deleteMany({ where: { userId: "u2" } });
   });
 });
 
@@ -165,7 +165,9 @@ describe("monthly report", () => {
       where: { userId: "u2", date: { gte: dateOnly(`${month}-01`), lte: dateOnly(jakartaDate()) } },
     });
     expect(row.present).toBe(present);
-    expect(row).toHaveProperty("late");
+    expect(row).not.toHaveProperty("late"); // no lateness rule: lecturers come when they teach
+    expect(row).toHaveProperty("scheduled");
+    expect(row).toHaveProperty("exempt");
     expect(row).toHaveProperty("absent");
     expect(res.body.rows.some((r: { user: { id: string } }) => r.user.id === "u6")).toBe(false); // inactive
   });

@@ -48,9 +48,23 @@ async function main() {
     });
   }
   const holidays = await seedHolidays();
+  const schedules = await seedSchedules();
   const attendance = await seedAttendance();
   const leave = await seedLeave();
-  console.log(`Seeded ${users.length} users, ${locations.length} locations, ${attendance} attendance records, ${leave} leave requests, ${holidays} holidays.`);
+  console.log(`Seeded ${users.length} users, ${schedules} work schedules, ${locations.length} locations, ${attendance} attendance records, ${leave} leave requests, ${holidays} holidays.`);
+}
+
+/** Part-time lecturers: ISO weekdays (1 = Mon). Everyone else keeps the Monday–Friday default. */
+const SCHEDULES: Record<string, string> = { u3: "24", u4: "135" };
+const isoDay = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
+const onSchedule = (userId: string, date: string) => (SCHEDULES[userId] ?? "12345").includes(String(isoDay(date)));
+
+/** Sample work schedules, valid since the start of last year. Skipped if any exist. */
+async function seedSchedules() {
+  if ((await prisma.workSchedule.count()) > 0) return 0;
+  const from = dateOnly(`${Number(jakartaDate().slice(0, 4)) - 1}-01-01`);
+  await prisma.workSchedule.createMany({ data: Object.entries(SCHEDULES).map(([userId, days]) => ({ userId, effectiveFrom: from, days })) });
+  return Object.keys(SCHEDULES).length;
 }
 
 /** Deterministic PRNG so the sample looks the same on every reseed. */
@@ -81,7 +95,7 @@ async function seedAttendance() {
   for (const u of users.filter((x) => x.active)) {
     for (let back = 75; back >= 1; back--) {
       const date = addDays(today, -back);
-      if (isWeekend(date) || onLeave(u.id, date) || rand() < 0.04) continue;
+      if (isWeekend(date) || !onSchedule(u.id, date) || onLeave(u.id, date) || rand() < 0.04) continue;
       const inMin = 7 * 60 + 10 + Math.floor(rand() * 75);
       const outMin = 15 * 60 + 30 + Math.floor(rand() * 120);
       const loc = rand() < 0.7 ? "gedung-a" : "gedung-b";
@@ -102,7 +116,7 @@ async function seedAttendance() {
   if (fixed) Object.assign(fixed, { outMin: 16 * 60 + 45, status: "FIXED", fixReason: "Lupa memindai karena rapat program studi sampai sore." });
 
   if (!isWeekend(today) && hourNow >= 7) {
-    for (const u of users.filter((x) => x.active && x.id !== "u1" && !onLeave(x.id, today))) {
+    for (const u of users.filter((x) => x.active && x.id !== "u1" && onSchedule(x.id, today) && !onLeave(x.id, today))) {
       if (rand() < 0.15) continue;
       const inMin = 7 * 60 + 5 + Math.floor(rand() * 80);
       const done = hourNow >= 17 && rand() < 0.6;

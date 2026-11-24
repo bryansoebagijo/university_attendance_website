@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { HttpError } from "../lib/http.js";
 import { addDays, dateOnly, fromDateOnly, isWeekend, jakartaDate } from "../lib/time.js";
 import { photoUrl } from "../lib/user-dto.js";
+import { loadSchedule, scheduledDates } from "./schedule.js";
 
 /** Working days (Mon–Fri, minus holidays) between two dates, inclusive. */
 export function workdaysBetween(start: string, end: string, holidays: ReadonlySet<string> = new Set()): number {
@@ -148,8 +149,9 @@ export async function createRequest(userId: string, input: NewRequest, now = new
   if (type === "ANNUAL" && start < today) throw new HttpError(400, "START_IN_PAST");
   if (type === "SICK" && start < addDays(today, -SICK_BACKDATE_DAYS)) throw new HttpError(400, "SICK_TOO_LATE");
   if (start.slice(0, 4) !== end.slice(0, 4)) throw new HttpError(400, "SPANS_YEARS");
-  // Holidays count at the time of the request; adding a holiday later doesn't change existing requests.
-  const days = workdaysBetween(start, end, await holidaysBetween(start, end));
+  // Only the person's scheduled days count, minus holidays. Both are taken at request time:
+  // a later schedule change or new holiday doesn't change existing requests.
+  const days = scheduledDates(await loadSchedule(userId), start, end, await holidaysBetween(start, end)).length;
   if (days === 0) throw new HttpError(400, "NO_WORKDAYS");
   if (type === "SICK" && days >= SICK_NOTE_MIN_DAYS && !attachment) throw new HttpError(400, "SICK_NOTE_REQUIRED");
 

@@ -17,8 +17,8 @@ export default function MonthlyReportPage() {
 
   const exportCsv = () =>
     downloadCsv(`rekap-${month}.csv`, [
-      ["NIP", "Nama", "Unit", "Hari kerja", "Hadir", "Terlambat", "Cuti", "Sakit", "Tanpa keterangan", "Belum absen pulang", "Diperbaiki", "Dipotong", "Via unggahan"],
-      ...rows.map((r) => [r.user.nip, r.user.name, r.user.unit, data!.workdays, r.present, r.late, r.leave, r.sick, r.absent, r.missingClockOut, r.fixed, r.deducted, r.uploads]),
+      ["NIP", "Nama", "Unit", "Hari jadwal", "Hadir", "Di luar jadwal", "Cuti", "Sakit", "Dibebaskan", "Tanpa keterangan", "Belum absen pulang", "Diperbaiki", "Dipotong", "Via unggahan", "Diubah admin"],
+      ...rows.map((r) => [r.user.nip, r.user.name, r.user.unit, r.scheduled, r.present, r.outsideSchedule, r.leave, r.sick, r.exempt, r.absent, r.missingClockOut, r.fixed, r.deducted, r.uploads, r.adminEdited]),
     ]);
 
   const num = (n: number, tone?: "bad" | "warn") =>
@@ -59,15 +59,18 @@ export default function MonthlyReportPage() {
             <thead>
               <tr>
                 <th>{t.common.name}</th>
+                <th>{t.reports.scheduled}</th>
                 <th>{t.reports.present}</th>
-                <th>{t.reports.late}</th>
+                <th>{t.reports.outside}</th>
                 <th>{t.reports.leave}</th>
                 <th>{t.reports.sick}</th>
+                <th>{t.reports.exempt}</th>
                 <th>{t.reports.absent}</th>
                 <th>{t.reports.missing}</th>
                 <th>{t.reports.fixed}</th>
                 <th>{t.reports.deducted}</th>
                 <th>{t.reports.uploads}</th>
+                <th>{t.reports.adminEdited}</th>
               </tr>
             </thead>
             <tbody>
@@ -84,17 +87,20 @@ export default function MonthlyReportPage() {
                       </div>
                     </div>
                   </td>
+                  <td data-label={t.reports.scheduled}>{r.scheduled}</td>
                   <td data-label={t.reports.present}>
                     <strong>{r.present}</strong>
                   </td>
-                  <td data-label={t.reports.late}>{num(r.late, "warn")}</td>
+                  <td data-label={t.reports.outside}>{r.outsideSchedule}</td>
                   <td data-label={t.reports.leave}>{r.leave}</td>
                   <td data-label={t.reports.sick}>{r.sick}</td>
+                  <td data-label={t.reports.exempt}>{r.exempt}</td>
                   <td data-label={t.reports.absent}>{num(r.absent, "bad")}</td>
                   <td data-label={t.reports.missing}>{num(r.missingClockOut, "warn")}</td>
                   <td data-label={t.reports.fixed}>{r.fixed}</td>
                   <td data-label={t.reports.deducted}>{num(r.deducted, "bad")}</td>
                   <td data-label={t.reports.uploads}>{num(r.uploads, "warn")}</td>
+                  <td data-label={t.reports.adminEdited}>{num(r.adminEdited, "warn")}</td>
                 </tr>
               ))}
             </tbody>

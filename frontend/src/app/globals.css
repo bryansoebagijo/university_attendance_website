@@ -196,6 +196,8 @@ h3 {
 .btn-active {
   background: var(--ok-soft) !important;
   color: var(--ok) !important;
+  border-color: var(--ok) !important;
+  font-weight: 700;
 }
 
 /* ---------- Surfaces ---------- */

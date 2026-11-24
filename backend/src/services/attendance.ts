@@ -2,13 +2,18 @@ import { Prisma, type Attendance, type Location, type ScanMethod } from "@prisma
 import { prisma } from "../db.js";
 import { HttpError } from "../lib/http.js";
 import { parseToken, verifyToken } from "../lib/qr.js";
-import { addDays, dateOnly, fixDeadline, fromDateOnly, jakartaDate, jakartaInstant, jakartaTime, WORK_START } from "../lib/time.js";
+import { addDays, dateOnly, fixDeadline, fromDateOnly, jakartaDate, jakartaInstant, jakartaTime } from "../lib/time.js";
 
-type Row = Attendance & { inLocation: Pick<Location, "id" | "name">; outLocation: Pick<Location, "id" | "name"> | null };
+type Row = Attendance & {
+  inLocation: Pick<Location, "id" | "name">;
+  outLocation: Pick<Location, "id" | "name"> | null;
+  editedBy?: { id: string; name: string } | null;
+};
 
 export const attendanceInclude = {
   inLocation: { select: { id: true, name: true } },
   outLocation: { select: { id: true, name: true } },
+  editedBy: { select: { id: true, name: true } },
 } satisfies Prisma.AttendanceInclude;
 
 export function toAttendanceDto(a: Row) {
@@ -24,11 +29,12 @@ export function toAttendanceDto(a: Row) {
     status: a.status,
     inMethod: a.inMethod,
     outMethod: a.outMethod,
-    late: jakartaTime(a.clockIn) > WORK_START,
     fixReason: a.fixReason,
     fixedAt: a.fixedAt?.toISOString() ?? null,
     deductedAt: a.deductedAt?.toISOString() ?? null,
     fixDeadline: a.status === "MISSING_CLOCK_OUT" ? fixDeadline(date) : null,
+    /** Admin correction, shown to the teacher too. */
+    edit: a.editedAt ? { by: a.editedBy ?? null, at: a.editedAt.toISOString(), reason: a.editReason } : null,
   };
 }
 export type AttendanceDto = ReturnType<typeof toAttendanceDto>;
