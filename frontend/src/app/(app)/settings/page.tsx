@@ -7,6 +7,7 @@ import { LanguageSwitch } from "@/components/language-switch";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Avatar, PageHeading } from "@/components/ui";
 import { ApiError, meApi } from "@/lib/api";
+import { LicenseCard } from "@/components/license";
 import { useI18n } from "@/lib/i18n/provider";
 import { useMe, useSession } from "@/lib/me";
 import { useStore } from "@/lib/store";
@@ -58,7 +59,7 @@ export default function SettingsPage() {
           <Avatar name={me.name} photoUrl={me.photoUrl} size={96} />
           <div className="min-w-0 flex-1">
             <div className="font-display text-[17px] font-bold text-ink">{me.name}</div>
-            <div className="text-[13px] text-muted">{me.email}</div>
+            <div className="text-[13px] text-muted">{me.email ?? `NIP ${me.nip}`}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
                 <Camera size={14} /> {me.photoUrl ? t.settings.photoChange : t.settings.photoUpload}
@@ -118,6 +119,9 @@ export default function SettingsPage() {
           <p className="card-sub">{t.settings.themeSub}</p>
         </div>
         <ThemeSwitch onChange={(theme) => void run(() => meApi.savePreferences({ theme }), t.settings.saved)} />
+      </div>
+      <div className="mt-5">
+        <LicenseCard />
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ FROM deps AS build
 COPY . .
 ARG API_URL=http://backend:4000
 ENV API_URL=$API_URL \
+    NEXT_OUTPUT=standalone \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

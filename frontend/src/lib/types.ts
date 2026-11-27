@@ -143,7 +143,8 @@ export interface PendingLeave extends LeaveRequest {
 /** The signed-in user as returned by the backend (POST /api/auth/login, GET /api/me). */
 export interface SessionUser {
   id: string;
-  email: string;
+  /** Optional: teachers synced from the client's database may have none (they log in with their NIP). */
+  email: string | null;
   name: string;
   nip: string;
   role: Role;
@@ -156,10 +157,15 @@ export interface SessionUser {
   photoUrl: string | null;
   /** Signed in with a one-time password: must choose a new one before using the app. */
   mustChangePassword: boolean;
+  /** Set for teachers synced from the client's database (name, NIP, unit, email and status come from there). */
+  externalId: string | null;
+  lastSyncedAt: string | null;
 }
 
 /** Staff list row (admin). */
 export interface StaffUser extends SessionUser {
+  /** False for accounts that can't log in yet (just imported by the sync). */
+  hasPassword: boolean;
   balance: LeaveBalance | null;
   /** The schedule that applies today (default = Monday–Friday) and the next change. */
   schedule: { days: number[]; isDefault: boolean; next: SchedulePeriod | null };

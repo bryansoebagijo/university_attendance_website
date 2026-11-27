@@ -38,7 +38,7 @@ if (!input.success) {
 const { email, name, nip, unit } = input.data;
 const existing = await prisma.user.findFirst({ where: { OR: [{ email }, { nip }] }, select: { email: true } });
 if (existing) {
-  console.error(`An account with this email or NIP already exists (${existing.email}). Use "Reset sandi" in the app instead.`);
+  console.error(`An account with this email or NIP already exists (${existing.email ?? "no email"}). Use "Reset sandi" in the app instead.`);
   await prisma.$disconnect();
   process.exit(1);
 }

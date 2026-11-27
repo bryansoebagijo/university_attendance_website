@@ -73,7 +73,9 @@ function Login() {
             {t.login.email}
             <input
               className="input"
-              type="email"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
               autoComplete="username"
               value={email}
               onChange={(e) => {

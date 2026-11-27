@@ -29,7 +29,9 @@ enum Theme {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  /// Optional: teachers synced from the client's database may have none (they log in with their NIP).
+  email        String?  @unique
+  /// Empty until a password is issued (e.g. a teacher just imported by the sync); such accounts can't log in.
   passwordHash String
   name         String
   nip          String   @unique
@@ -43,6 +45,9 @@ model User {
   mustChangePassword Boolean @default(false)
   /// Part of every session token. Bumping it (password change/reset) signs out all existing sessions.
   sessionVersion     Int     @default(0)
+  /// The teacher's id in the client's existing database. Set = name/NIP/unit/email/active are managed by the sync.
+  externalId   String?  @unique
+  lastSyncedAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -110,6 +115,10 @@ model UserPhoto {
   data      Bytes
   mimeType  String
   size      Int
+  /// UPLOAD = chosen by the person; HR = imported from the HR database (replaced when HR changes it).
+  source     String   @default("UPLOAD")
+  /// Fingerprint of the HR photo it came from, so unchanged photos aren't imported again.
+  sourceHash String?
   updatedAt DateTime @updatedAt
 }
 
@@ -227,4 +236,35 @@ model Holiday {
   date      DateTime @id @db.Date
   name      String
   createdAt DateTime @default(now())
+}
+
+/// One run of the teacher sync (nightly, manual "Sinkronkan sekarang", or at startup).
+model SyncRun {
+  id          String    @id @default(cuid())
+  trigger     String // NIGHTLY | MANUAL
+  actorId     String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  /// RUNNING | OK | ERROR | ABORTED
+  status      String
+  sourceRows  Int       @default(0)
+  added       Int       @default(0)
+  updated     Int       @default(0)
+  deactivated Int       @default(0)
+  reactivated Int       @default(0)
+  skipped     Int       @default(0)
+  /// Profile photos imported from HR in this run.
+  photos      Int       @default(0)
+  message     String?   @db.Text
+  /// Per-row problems, e.g. [{ externalId, nip, error }]
+  problems    Json?
+
+  @@index([startedAt])
+}
+
+/// Which database script version is installed. The backend refuses to start if it's older than the code expects.
+model SchemaVersion {
+  version   Int      @id
+  note      String?
+  appliedAt DateTime @default(now())
 }

@@ -24,6 +24,7 @@ import { useI18n } from "@/lib/i18n/provider";
 import { useMe, useSession } from "@/lib/me";
 import { authApi } from "@/lib/api";
 import type { Role } from "@/lib/types";
+import { LicenseBanner } from "./license";
 import { Avatar } from "./ui";
 
 interface NavItem {
@@ -214,6 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="lg:ml-[254px]">
         <Topbar crumb={crumb} />
         <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-[38px] sm:py-[30px]">
+          <LicenseBanner />
           {children}
           <PageFooter />
         </div>

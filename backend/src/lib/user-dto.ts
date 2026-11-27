@@ -13,6 +13,8 @@ export const userSelect = {
   locale: true,
   theme: true,
   mustChangePassword: true,
+  externalId: true,
+  lastSyncedAt: true,
   photo: { select: { updatedAt: true } },
 } satisfies Prisma.UserSelect;
 

@@ -62,7 +62,10 @@ describe("GET /api/me", () => {
 
   it("rejects a tampered token", async () => {
     const cookie = await sessionCookie();
-    const tampered = cookie.replace(/.$/, (c) => (c === "a" ? "b" : "a"));
+    // Change a character inside the signature. (Not the last one: in base64 its low bits are padding,
+    // so swapping it can decode to the very same bytes and leave the token valid — a flaky test.)
+    const i = cookie.length - 10;
+    const tampered = cookie.slice(0, i) + (cookie[i] === "A" ? "B" : "A") + cookie.slice(i + 1);
     expect((await request(app).get("/api/me").set("Cookie", tampered)).status).toBe(401);
   });
 

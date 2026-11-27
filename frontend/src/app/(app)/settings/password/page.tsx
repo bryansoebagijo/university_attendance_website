@@ -52,7 +52,7 @@ export default function PasswordPage() {
       )}
       <form className="card space-y-4" onSubmit={submit} noValidate>
         {/* Hidden username helps password managers save the right account. */}
-        <input type="email" autoComplete="username" value={user.email} readOnly hidden />
+        <input type="text" autoComplete="username" value={user.email ?? user.nip} readOnly hidden />
         <label className="field">
           {forced ? t.password.currentTemp : t.password.current}
           <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />

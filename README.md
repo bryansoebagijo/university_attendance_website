@@ -9,8 +9,17 @@ absen_website/
 └── ISTA_Dummy_Interaktif.html   design reference
 ```
 
-> **Production:** Docker (frontend + backend containers) behind the client's web server, using their MySQL.
-> See **[DEPLOY.md](DEPLOY.md)**.
+> **Production:** Docker (frontend + backend containers, code mounted from the server) behind the client's web
+> server, using a separate database on their MySQL and syncing teachers from their existing teacher table.
+> See **[DEPLOY.md](DEPLOY.md)** — also as a PDF: `deploy/ISTA_Presensi_Deployment_Guide.pdf`
+> (rebuild with `node deploy/guide/build-pdf.mjs`).
+> The client server has **no internet**: `node deploy/release/make-release.mjs` builds an offline release in `release/`
+> (zip with the app prebuilt for Linux, the runtime image and Docker's static binaries + `deploy.sh` + `SHA256SUMS`);
+> on the server `sudo bash deploy.sh install ista-absen-<version>.zip`.
+>
+> **License:** production needs a signed license (`config/license.key`, or the `LICENSE` env var on hosting).
+> Without one the app is read-only. Key pair once: `node tools/license/keygen.mjs` (private key stays in
+> `~/.ista-license/`, never in git); licenses: `node tools/license/issue.mjs --customer "…" --expires YYYY-MM-DD`.
 
 ## Run locally
 
@@ -56,6 +65,11 @@ DATABASE_URL=mysql://absen:PASSWORD@localhost:3306/absen                     # M
   **Never edit the MySQL copy by hand.**
 - Migrations are separate per database: `prisma/migrations` (PostgreSQL) and `prisma/mysql/migrations` (MySQL).
   After changing the schema, create a migration for **both** (run `npm run db:migrate` once with each `DATABASE_URL`).
+- **Production MySQL is set up by the client's DBA from plain SQL files** in `deploy/mysql/`, not by Prisma.
+  After a schema change: run `node scripts/build-mysql-sql.mjs` (regenerates `001_create_tables.sql` for new
+  installs), write a numbered `deploy/mysql/00N_*.sql` update for existing ones (copy the new MySQL migration;
+  keep table names in PascalCase — MySQL on Windows lowercases them), make it and both Prisma migrations insert the
+  next `SchemaVersion` row, and bump `REQUIRED_SCHEMA_VERSION` in `src/lib/schema-version.ts`.
 - The generated Prisma client is specific to one database. `npm install` and `npm run db:generate` build it for
   whatever `.env` points at; switching databases means running `npm run db:generate` again.
 - Differences handled in code: case-insensitive search (`src/lib/db-dialect.ts`) and duplicate-email/NIP errors.

@@ -46,8 +46,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    api<{ user: SessionUser }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  /** `login`: email address or NIP. */
+  login: (login: string, password: string) =>
+    api<{ user: SessionUser }>("/auth/login", { method: "POST", body: JSON.stringify({ login, password }) }),
   logout: () => api<void>("/auth/logout", { method: "POST" }),
 };
 
@@ -66,8 +67,8 @@ export const meApi = {
 };
 
 /** GET with caching and revalidation (SWR). Pass null to skip. */
-export function useApi<T>(path: string | null) {
-  return useSWR<T, ApiError>(path, (p: string) => api<T>(p), { revalidateOnFocus: true, keepPreviousData: true });
+export function useApi<T>(path: string | null, opts: { refreshInterval?: number } = {}) {
+  return useSWR<T, ApiError>(path, (p: string) => api<T>(p), { revalidateOnFocus: true, keepPreviousData: true, ...opts });
 }
 
 // ---- Attendance ---------------------------------------------------------------
@@ -116,6 +117,7 @@ export const paths = {
     `/admin/users?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString()}`,
   holidays: (year: number) => `/holidays?year=${year}`,
   monthlyReport: (month: string) => `/admin/reports/monthly?month=${month}`,
+  license: "/license",
   adminDay: (date: string) => `/admin/day?date=${date}`,
   staffSchedule: (id: string) => `/admin/users/${encodeURIComponent(id)}/schedules`,
 };
@@ -210,7 +212,7 @@ export const leaveApi = {
 
 // ---- Admin: staff -------------------------------------------------------------------
 
-export type StaffInput = { name: string; email: string; nip: string; role: Role; unit: string; annualQuota: number; active: boolean };
+export type StaffInput = { name: string; email: string | null; nip: string; role: Role; unit: string; annualQuota: number; active: boolean };
 
 export const staffApi = {
   create: (body: StaffInput) => api<{ user: SessionUser; tempPassword: string }>("/admin/users", { method: "POST", body: JSON.stringify(body) }),
@@ -257,4 +259,32 @@ export const correctionsApi = {
   deleteAttendance: (id: string, reason: string) => api<void>(`/admin/attendance/${encodeURIComponent(id)}`, json("DELETE", { reason })),
   exempt: (userId: string, date: string, reason: string) => api<{ exemption: Exemption }>("/admin/exemptions", json("POST", { userId, date, reason })),
   unexempt: (id: string) => api<void>(`/admin/exemptions/${encodeURIComponent(id)}`, json("DELETE")),
+};
+
+// ---- Admin: teacher sync with the client's database ------------------------------------
+
+export interface SyncRun {
+  id: string;
+  status: "OK" | "ERROR" | "ABORTED" | "RUNNING";
+  trigger: "NIGHTLY" | "MANUAL" | "STARTUP";
+  sourceRows: number;
+  added: number;
+  updated: number;
+  deactivated: number;
+  reactivated: number;
+  skipped: number;
+  /** Profile photos imported from HR. */
+  photos: number;
+  message: string | null;
+  problems: { externalId?: string; nip?: string; error: string }[];
+  startedAt: string;
+  finishedAt: string;
+}
+export type SyncStatus = { configured: boolean; source: string | null; photos: boolean; nightly: boolean; syncedAccounts: number; needPassword: number; runs: SyncRun[] };
+export type IssuedPassword = { id: string; name: string; nip: string; email: string | null; unit: string; tempPassword: string };
+
+export const syncApi = {
+  status: "/admin/sync",
+  run: (force = false) => api<{ run: SyncRun }>("/admin/sync", { method: "POST", body: JSON.stringify({ force }) }),
+  issuePasswords: () => api<{ accounts: IssuedPassword[] }>("/admin/sync/passwords", { method: "POST" }),
 };

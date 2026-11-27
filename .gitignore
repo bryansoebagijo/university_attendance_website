@@ -11,11 +11,13 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
-!.env.production.example
 *.pem
 *.key
 backend/.pg-superuser-password
 backend/.mysql-root-password
+
+# Generated guide HTML (the PDF is committed)
+deploy/guide/guide.html
 
 # Editor / tool folders
 .claude/
@@ -24,3 +26,6 @@ backend/.mysql-root-password
 .DS_Store
 Thumbs.db
 *.log
+
+# Release packages (node deploy/release/make-release.mjs)
+/release/

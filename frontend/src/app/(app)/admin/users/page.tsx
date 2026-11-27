@@ -3,6 +3,7 @@
 import { CalendarRange, Copy, KeyRound, Pencil, Plus, Trash2, UserX } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DayChips, ScheduleEditor } from "@/components/schedule";
+import { SyncPanel } from "@/components/sync-panel";
 import { Avatar, Empty, LoadError, Modal, PageHeading, Skeleton } from "@/components/ui";
 import { fmtDate } from "@/lib/date";
 import { ApiError, paths, staffApi, useApi, type StaffInput, type StaffResponse } from "@/lib/api";
@@ -43,6 +44,9 @@ export default function AdminUsersPage() {
           </button>
         }
       />
+      <div className="mb-4">
+        <SyncPanel />
+      </div>
       <div className="mb-4 flex flex-wrap gap-2">
         <input className="input input-inline min-w-[220px] flex-1" placeholder={t.common.search} value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input input-inline" value={role} onChange={(e) => setRole(e.target.value as Role | "")}>
@@ -81,9 +85,15 @@ export default function AdminUsersPage() {
                         <div className="min-w-0">
                           <strong>
                             {u.name} {self && <span className="tag tag-gray ml-1">{t.admin.you}</span>}
+                            {u.externalId && (
+                              <span className="tag tag-blue ml-1 !px-1.5 !py-0.5 !text-[10px]" title={t.sync.syncedTitle}>
+                                {t.sync.syncedTag}
+                              </span>
+                            )}
+                            {!u.hasPassword && <span className="tag tag-warn ml-1 !px-1.5 !py-0.5 !text-[10px]">{t.sync.noPasswordTag}</span>}
                           </strong>
                           <small>
-                            {u.email}
+                            {u.email ?? `NIP ${u.nip}`}
                             {u.unit && ` · ${u.unit}`}
                           </small>
                         </div>
@@ -200,17 +210,23 @@ function UserForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const set = <K extends keyof StaffInput>(k: K, v: StaffInput[K]) => setU((x) => ({ ...x, [k]: v }));
-  const valid = u.name.trim().length >= 3 && /\S+@\S+\.\S+/.test(u.email) && u.nip.trim().length >= 3 && u.annualQuota >= 0;
+  const emailText = (u.email ?? "").trim();
+  // Email is optional (teachers can log in with their NIP), but must look right when given.
+  const valid = u.name.trim().length >= 3 && (!emailText || /\S+@\S+\.\S+/.test(emailText)) && u.nip.trim().length >= 3 && u.annualQuota >= 0;
+  // Synced teachers: name, NIP, email, unit and status come from the client's database.
+  const synced = !!user?.externalId;
 
   const save = async () => {
     setBusy(true);
     setError(null);
-    const body = { ...u, name: u.name.trim(), email: u.email.trim().toLowerCase(), nip: u.nip.trim(), unit: u.unit.trim() };
+    const body = { ...u, name: u.name.trim(), email: emailText ? emailText.toLowerCase() : null, nip: u.nip.trim(), unit: u.unit.trim() };
     try {
       if (user) {
         // Admins can't change their own role or status; don't send those fields.
         const { role, active, ...rest } = body;
-        await staffApi.update(user.id, self ? rest : { ...rest, role, active });
+        const { name: _n, email: _e, nip: _p, unit: _u, ...appOwned } = rest;
+        const fields = synced ? appOwned : rest;
+        await staffApi.update(user.id, self ? fields : synced ? { ...fields, role } : { ...fields, role, active });
         notify(t.admin.userSaved);
         onSaved();
       } else {
@@ -222,7 +238,7 @@ function UserForm({
     } catch (err) {
       const code = err instanceof ApiError ? err.code : "";
       setError(
-        { EMAIL_TAKEN: t.admin.emailTaken, NIP_TAKEN: t.admin.nipTaken, SELF_CHANGE: t.admin.selfChange, LAST_ADMIN: t.admin.lastAdmin }[code] ??
+        { SYNCED_FIELD: t.sync.syncedHint, EMAIL_TAKEN: t.admin.emailTaken, NIP_TAKEN: t.admin.nipTaken, SELF_CHANGE: t.admin.selfChange, LAST_ADMIN: t.admin.lastAdmin }[code] ??
           t.errors.generic,
       );
       setBusy(false);
@@ -245,22 +261,23 @@ function UserForm({
         </>
       }
     >
+      {synced && <div className="notice mb-4 text-[12.5px]">{t.sync.syncedHint}</div>}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="field sm:col-span-2">
           {t.common.name}
-          <input className="input" value={u.name} onChange={(e) => set("name", e.target.value)} />
+          <input className="input" value={u.name} disabled={synced} onChange={(e) => set("name", e.target.value)} />
         </label>
         <label className="field">
-          {t.admin.email}
-          <input className="input" type="email" value={u.email} onChange={(e) => set("email", e.target.value)} />
+          {t.admin.email} <span className="font-normal text-muted">({t.sync.optional})</span>
+          <input className="input" type="email" value={u.email ?? ""} disabled={synced} onChange={(e) => set("email", e.target.value)} />
         </label>
         <label className="field">
           {t.admin.nip}
-          <input className="input" value={u.nip} onChange={(e) => set("nip", e.target.value)} />
+          <input className="input" value={u.nip} disabled={synced} onChange={(e) => set("nip", e.target.value)} />
         </label>
         <label className="field">
           {t.admin.unit}
-          <input className="input" value={u.unit} onChange={(e) => set("unit", e.target.value)} />
+          <input className="input" value={u.unit} disabled={synced} onChange={(e) => set("unit", e.target.value)} />
         </label>
         <label className="field">
           {t.admin.role}
@@ -277,7 +294,7 @@ function UserForm({
           <input className="input" type="number" min={0} max={60} value={u.annualQuota} onChange={(e) => set("annualQuota", Number(e.target.value))} />
         </label>
         <label className="field flex items-center gap-2 self-end pb-3">
-          <input type="checkbox" checked={u.active} disabled={self} onChange={(e) => set("active", e.target.checked)} className="h-4 w-4 accent-brand" />
+          <input type="checkbox" checked={u.active} disabled={self || synced} onChange={(e) => set("active", e.target.checked)} className="h-4 w-4 accent-brand" />
           {t.status.ACTIVE}
         </label>
       </div>
@@ -423,7 +440,7 @@ function DeleteStaff({ user, onClose, onDone }: { user: StaffUser; onClose: () =
         <div className="min-w-0">
           <div className="font-semibold text-ink-2">{user.name}</div>
           <div className="tiny">
-            {user.email} · {user.nip}
+            {user.email ?? "—"} · {user.nip}
           </div>
         </div>
       </div>

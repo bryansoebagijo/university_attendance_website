@@ -1,6 +1,6 @@
 # Render Blueprint for the free DEMO deployment (backend only).
 # Frontend: Vercel (root directory "frontend"). Database: Neon PostgreSQL.
-# Production for the client uses docker-compose.yml + their MySQL instead (see DEPLOY.md).
+# Production for the client: offline release zip + deploy.sh with its own PostgreSQL (see DEPLOY.md).
 services:
   - type: web
     name: ista-absen-api
@@ -28,4 +28,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
+        sync: false
+      # Signed license text (tools/license/issue.mjs). Without it the demo is read-only.
+      - key: LICENSE
         sync: false

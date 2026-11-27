@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { Router } from "express";
 import multer from "multer";
-import sharp from "sharp";
+import { toProfileJpeg } from "../lib/photo.js";
 import { z } from "zod";
 import { requireAuth } from "../auth/middleware.js";
 import { SESSION_COOKIE, sessionCookieOptions, signSession } from "../auth/session.js";
@@ -65,7 +65,6 @@ meRouter.put(
 // ---- Profile photo -------------------------------------------------------
 
 export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
-const PHOTO_SIZE = 320;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const upload = multer({
@@ -85,11 +84,7 @@ meRouter.put(
     // Also rejects files that only pretend to be images.
     let data: Buffer;
     try {
-      data = await sharp(file.buffer, { limitInputPixels: 40_000_000 })
-        .rotate()
-        .resize(PHOTO_SIZE, PHOTO_SIZE, { fit: "cover", position: "attention" })
-        .jpeg({ quality: 85, mozjpeg: true })
-        .toBuffer();
+      data = await toProfileJpeg(file.buffer);
     } catch {
       throw new HttpError(415, "UNSUPPORTED_IMAGE");
     }
@@ -97,8 +92,9 @@ meRouter.put(
     const userId = req.user!.id;
     await prisma.userPhoto.upsert({
       where: { userId },
-      create: { userId, data, mimeType: "image/jpeg", size: data.length },
-      update: { data, mimeType: "image/jpeg", size: data.length },
+      // The person's own choice: the HR sync never replaces it.
+      create: { userId, data, mimeType: "image/jpeg", size: data.length, source: "UPLOAD" },
+      update: { data, mimeType: "image/jpeg", size: data.length, source: "UPLOAD", sourceHash: null },
     });
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: userSelect });
     res.json({ user: toUserDto(user) });

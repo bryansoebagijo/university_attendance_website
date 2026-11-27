@@ -27,7 +27,7 @@ staffRouter.get(
   route(async (req, res) => {
     const { q, role } = listSchema.parse(req.query);
     const today = jakartaDate();
-    const [users, balances, schedules] = await Promise.all([
+    const [users, balances, schedules, noPassword] = await Promise.all([
       prisma.user.findMany({
         where: {
           ...(role ? { role } : {}),
@@ -40,11 +40,13 @@ staffRouter.get(
       }),
       getBalances(Number(today.slice(0, 4))),
       loadSchedules(),
+      prisma.user.findMany({ where: { passwordHash: "" }, select: { id: true } }),
     ]);
+    const without = new Set(noPassword.map((u) => u.id));
     res.json({
       users: users.map((u) => {
         const { current, next } = currentAndNext(schedules.get(u.id) ?? [], today);
-        return { ...toUserDto(u), balance: balances[u.id] ?? null, schedule: { days: current.days, isDefault: current.isDefault, next } };
+        return { ...toUserDto(u), hasPassword: !without.has(u.id), balance: balances[u.id] ?? null, schedule: { days: current.days, isDefault: current.isDefault, next } };
       }),
     });
   }),
@@ -52,7 +54,12 @@ staffRouter.get(
 
 const userBody = z.object({
   name: z.string().trim().min(3).max(120),
-  email: z.string().trim().toLowerCase().email().max(200),
+  // Optional: teachers can log in with their NIP. "" from a form means none.
+  email: z
+    .union([z.string().trim().toLowerCase().email().max(200), z.literal("")])
+    .nullable()
+    .optional()
+    .transform((v) => v || null),
   nip: z.string().trim().min(3).max(40),
   role: z.enum(ROLES).default("USER"),
   unit: z.string().trim().max(120).default(""),
@@ -94,8 +101,19 @@ staffRouter.patch(
   "/:id",
   route(async (req, res) => {
     const body = userBody.partial().parse(req.body);
-    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true, role: true, active: true } });
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, role: true, active: true, externalId: true, name: true, nip: true, email: true, unit: true },
+    });
     if (!target) throw new HttpError(404, "NOT_FOUND");
+    // These come from the client's database and would be overwritten by the next sync: change them there.
+    if (target.externalId) {
+      const synced = { name: target.name, nip: target.nip, email: target.email, unit: target.unit, active: target.active } as const;
+      for (const k of Object.keys(synced) as (keyof typeof synced)[]) {
+        if (body[k] !== undefined && body[k] !== synced[k]) throw new HttpError(409, "SYNCED_FIELD");
+        delete body[k];
+      }
+    }
 
     const self = target.id === req.user!.id;
     const roleChanges = body.role !== undefined && body.role !== target.role;

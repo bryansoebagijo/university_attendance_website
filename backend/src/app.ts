@@ -14,8 +14,11 @@ import { leaveRouter } from "./routes/leave.js";
 import { reportsRouter } from "./routes/reports.js";
 import { staffRouter } from "./routes/staff.js";
 import { correctionsRouter } from "./routes/corrections.js";
+import { syncRouter } from "./routes/sync.js";
 import { meRouter } from "./routes/me.js";
 import { usersRouter } from "./routes/users.js";
+import { licenseRouter } from "./routes/license.js";
+import { licenseGuard } from "./services/license.js";
 
 export function createApp() {
   const app = express();
@@ -27,10 +30,14 @@ export function createApp() {
   app.use(express.json({ limit: "100kb" }));
   app.use(cookieParser());
 
+  // Read-only mode when the license is missing, invalid or expired (production only).
+  app.use(licenseGuard);
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", service: "absen-backend", time: new Date().toISOString() });
   });
   app.use("/api/auth", authRouter);
+  app.use("/api/license", licenseRouter);
   app.use("/api/me", meRouter);
   app.use("/api/users", usersRouter);
   app.use("/api/attendance", attendanceRouter);
@@ -38,6 +45,7 @@ export function createApp() {
   app.use("/api/leave", leaveRouter);
   app.use("/api/holidays", holidaysRouter);
   // Specific admin sub-routers first, then the general admin router.
+  app.use("/api/admin/sync", syncRouter); // teacher sync with the client's database
   app.use("/api/admin", correctionsRouter); // schedules, day roster, attendance corrections
   app.use("/api/admin/users", staffRouter);
   app.use("/api/admin/holidays", adminHolidaysRouter);

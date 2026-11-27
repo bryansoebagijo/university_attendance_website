@@ -1,0 +1,144 @@
+# ISTA Presensi — production stack for the offline release: its own PostgreSQL + backend + frontend.
+#
+# Installed and driven by deploy/deploy.sh. Layout on the server (ISTA_HOME, default /opt/ista-absen):
+#   app -> releases/ista-absen-<version>/   this folder; docker compose runs here
+#   config/                                 app.env + secret files (set ISTA_CONFIG_DIR to move it)
+#   backups/                                daily PostgreSQL backups (deploy.sh backup)
+#
+# Nothing is downloaded or built on the server. The release contains:
+#   app/backend, app/frontend   the application, already built for Linux (mounted read-only below)
+#   images/*.tar                Node.js runtime + PostgreSQL images, loaded with `docker load` by deploy.sh
+# A new version = a new release folder; deploy.sh recreates the containers on it. No image rebuild.
+# The app's data lives in the Docker volume "ista-absen_pgdata" and is kept across versions.
+#
+# Staff come from the campus HR database (MariaDB, read-only, HR_DB_* in app.env). If it isn't set up
+# or can't be reached, the app works anyway and staff are added by hand.
+# The client's web server (Apache/Nginx) handles HTTPS and proxies to 127.0.0.1:3000.
+
+# Fixed project name: the same containers and data volume are reused across versions and folders.
+name: ista-absen
+
+x-common: &common
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-node: &node
+  <<: *common
+  # Google's distroless Node.js 22 (Debian 12): Node + OpenSSL 3, no shell or package manager.
+  image: ista-absen-node:22-distroless
+  pull_policy: never
+  user: "1000:1000"
+  init: true
+  read_only: true
+  working_dir: /srv/app
+  env_file: ${ISTA_CONFIG_DIR:-/opt/ista-absen/config}/app.env
+  # The HR database may run on this same machine: reachable as "host.docker.internal".
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  tmpfs:
+    - /tmp
+
+services:
+  db:
+    <<: *common
+    image: ista-absen-postgres:17
+    pull_policy: never
+    environment:
+      POSTGRES_DB: ista_absen
+      POSTGRES_USER: ista_absen
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      TZ: Asia/Jakarta
+    secrets: [db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published: only the backend talks to it, over the internal Docker network.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ista_absen", "-d", "ista_absen"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    <<: *node
+    command: ["dist/index.js"]
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # This app's own database (the "db" service above). Tables are created/updated at startup.
+      DB_PROVIDER: postgresql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ista_absen
+      DB_USER: ista_absen
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      AUTO_MIGRATE: "true"
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      # Read-only password for the campus HR database (HR_DB_HOST etc. are in app.env).
+      HR_DB_PASSWORD_FILE: /run/secrets/hr_db_password
+      # The license (config/license.key). Re-read every minute: install a new one with deploy.sh license.
+      LICENSE_FILE: /run/secrets/license
+      # Client web server + Next.js sit in front of the backend.
+      TRUST_PROXY: "2"
+      # The image has no shell, so Prisma can't probe the OpenSSL version: point it at the engine directly.
+      PRISMA_QUERY_ENGINE_LIBRARY: /srv/app/node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node
+    secrets: [db_password, jwt_secret, hr_db_password, license]
+    volumes:
+      - ./app/backend:/srv/app:ro
+    expose: ["4000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  frontend:
+    <<: *node
+    # launch.mjs loads the JWT secret file, then starts the Next.js server.
+    command: ["launch.mjs"]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+    secrets: [jwt_secret]
+    volumes:
+      - ./app/frontend:/srv/app:ro
+    tmpfs:
+      - /tmp
+      # Next.js keeps a small cache here; the code itself is read-only.
+      - /srv/app/.next-release/cache:mode=1777
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Only reachable from this machine; the web server proxies to it.
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "/nodejs/bin/node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+# Docker secrets: plain files in config/, mounted at /run/secrets/<name>. deploy.sh creates and protects them.
+secrets:
+  db_password:
+    file: ${ISTA_CONFIG_DIR:-/opt/ista-absen/config}/db_password
+  jwt_secret:
+    file: ${ISTA_CONFIG_DIR:-/opt/ista-absen/config}/jwt_secret
+  hr_db_password:
+    file: ${ISTA_CONFIG_DIR:-/opt/ista-absen/config}/hr_db_password
+  license:
+    file: ${ISTA_CONFIG_DIR:-/opt/ista-absen/config}/license.key
+
+volumes:
+  pgdata:

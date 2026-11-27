@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowRight, CalendarDays, Clock, FileText, ShieldCheck, UserCheck, Users } from "lucide-react";
 import Link from "next/link";
+import { SyncPanel } from "@/components/sync-panel";
 import { TodayCard } from "@/components/today-card";
 import { LoadError, PageHeading, ProfilePhoto, Skeleton, StatCard, StatusTag } from "@/components/ui";
 import { paths, useApi, type AdminOverview, type AttendanceOverview, type MyLeaveResponse, type PendingLeaveResponse } from "@/lib/api";
@@ -281,6 +282,10 @@ function AdminDashboard() {
             sub={t.dashboard.missingTaskSub}
           />
         </div>
+      </div>
+
+      <div className="mt-5">
+        <SyncPanel />
       </div>
 
       <h2 className="card-title mb-3 mt-7">{t.dashboard.myAttendance}</h2>
